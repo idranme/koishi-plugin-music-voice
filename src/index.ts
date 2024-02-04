@@ -20,7 +20,6 @@ export interface Config {
     waitTimeout: number
     exitCommand: string
     menuExitCommandTip: boolean
-    retryExitCommandTip: boolean
     recall: boolean
     imageMode: boolean
     darkMode: boolean
@@ -28,18 +27,17 @@ export interface Config {
 
 export const Config: Schema<Config> = Schema.intersect([
     Schema.object({
-        generationTip: Schema.string().default('生成语音中…').description('生成语音中返回的文字提示内容'),
-        waitTimeout: Schema.natural().role('ms').description('允许用户返回选择序号的等待时间').default(45000),
+        generationTip: Schema.string().description('生成语音中返回的文字提示内容').default('生成语音中…'),
+        waitTimeout: Schema.natural().role('ms').description('允许用户返回选择序号的等待时间').default(45000)
     }).description('基础设置'),
     Schema.object({
-        exitCommand: Schema.string().default('0, 不听了').description('退出选择指令，多个指令间请用逗号分隔开'),
-        menuExitCommandTip: Schema.boolean().default(false).description('是否在歌单内容的后面，加上退出选择指令的文字提示'),
-        retryExitCommandTip: Schema.boolean().default(true).description('是否交互序号错误时，加上退出选择指令的文字提示'),
-        recall: Schema.boolean().default(true).description('是否在发送语音后撤回 `generationTip`'),
+        exitCommand: Schema.string().description('退出选择指令，多个指令间请用逗号分隔开').default('0, 不听了'),
+        menuExitCommandTip: Schema.boolean().description('是否在歌单内容的后面，加上退出选择指令的文字提示').default(false),
+        recall: Schema.boolean().description('是否在发送语音后撤回 `generationTip`').default(true)
     }).description('进阶设置'),
     Schema.object({
-        imageMode: Schema.boolean().default(true).description('开启后返回图片歌单，关闭后返回文本歌单'),
-        darkMode: Schema.boolean().default(true).description('是否开启暗黑模式')
+        imageMode: Schema.boolean().description('开启后返回图片歌单，关闭后返回文本歌单').default(true),
+        darkMode: Schema.boolean().description('是否开启暗黑模式').default(true)
     }).description('图片歌单设置'),
 ])
 
@@ -95,12 +93,8 @@ function formatSongList(data: SongData[], platform: Platform, startIndex: number
 async function generateSongListImage(pptr: Puppeteer, listText: string, cfg: Config) {
     const textBrightness = cfg.darkMode ? 255 : 0
     const backgroundBrightness = cfg.darkMode ? 0 : 255
-
-    const page = await pptr.browser.newPage()
-
     const textColor = `rgb(${textBrightness},${textBrightness},${textBrightness})`
     const backgroundColor = `rgb(${backgroundBrightness},${backgroundBrightness},${backgroundBrightness})`
-
     const htmlContent = `
       <!DOCTYPE html>
       <html lang="zh">
@@ -131,20 +125,18 @@ async function generateSongListImage(pptr: Puppeteer, listText: string, cfg: Con
         </body>
       </html>
     `
+
+    const page = await pptr.browser.newPage()
     await page.setContent(htmlContent)
-
-    const clipRect = await page.evaluate(() => {
+    const clip = await page.evaluate(() => {
         const songList = document.getElementById('song-list')
-        const rect = songList.getBoundingClientRect()
-        return { x: rect.left, y: rect.top, width: rect.width, height: rect.height }
+        const { left: x, top: y, width, height } = songList.getBoundingClientRect()
+        return { x, y, width, height }
     })
-
     const screenshot = await page.screenshot({
-        clip: clipRect,
-        encoding: 'binary'
+        clip,
     })
-
-    await page.close()
+    page.close()
     return screenshot
 }
 
@@ -156,14 +148,12 @@ export function apply(ctx: Context, cfg: Config) {
         .action(async ({ session }, keyword) => {
             if (!keyword) return '请输入歌曲相关信息。'
 
-            let qq: SearchResponse
+            let qq: SearchResponse, netease: SearchResponse
             try {
                 qq = await search(ctx.http, 'QQ Music', { name: keyword })
             } catch (e) {
                 logger.warn('获取QQ音乐数据时发生错误', e)
             }
-
-            let netease: SearchResponse
             try {
                 netease = await search(ctx.http, 'NetEase Music', { name: keyword })
             } catch (e) {
@@ -172,16 +162,14 @@ export function apply(ctx: Context, cfg: Config) {
 
             const qqData = qq.data as SongData[]
             const neteaseData = netease.data as SongData[]
+            if (!qqData?.length && !neteaseData?.length) return '无法获取歌曲列表，请稍后再试。'
 
             const qqListText = qqData?.length ? formatSongList(qqData, 'QQ Music', 0) : '<b>QQ Music</b>: 无法获取歌曲列表'
             const neteaseListText = neteaseData?.length ? formatSongList(neteaseData, 'NetEase Music', qqData?.length ?? 0) : '<b>NetEase Music</b>: 无法获取歌曲列表'
-            const songListText = `${qqListText}<br /><br />${neteaseListText}`
 
+            const songListText = `${qqListText}<br /><br />${neteaseListText}`
             const exitCommands = cfg.exitCommand.split(/[,，]/).map(cmd => cmd.trim())
             const waitTimeInSeconds = cfg.waitTimeout / 1000
-
-            if (!qqData?.length && !neteaseData?.length) return '无法获取歌曲列表，请稍后再试。'
-
             const exitCommandTip = cfg.menuExitCommandTip ? `退出选择请发[${exitCommands}]中的任意内容<br /><br />` : ''
             if (cfg.imageMode) {
                 const imageBuffer = await generateSongListImage(ctx.puppeteer, songListText, cfg)
@@ -224,7 +212,6 @@ export function apply(ctx: Context, cfg: Config) {
             const [tipMessageId] = await session.send(cfg.generationTip)
 
             const song = await search(ctx.http, platform, { songid })
-
             if (song.code === 0) {
                 const data = song.data as SongData
                 try {
