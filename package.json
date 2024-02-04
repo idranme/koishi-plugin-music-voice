@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-music-downloadvoice-api",
   "description": "Sing by voice",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
@@ -19,7 +19,7 @@
   "koishi": {
     "description": {
       "en": "Sing by voice",
-      "zh": "/*语音点歌*/🎵提供QQ、网易云平台的音乐，付费的也可以欸？"
+      "zh": "/*语音点歌*/🎵提供QQ音乐、网易云音乐的歌曲，付费的也可以欸？！"
     }
   },
   "peerDependencies": {

@@ -11,7 +11,8 @@ export const inject = {
 
 export const usage = `
 [食用方法点此获取](https://www.npmjs.com/package/koishi-plugin-music-downloadvoice-api)
-<p>生成语音的速度取决于网速和设备性能哦~</p>
+
+生成语音的速度取决于网速和设备性能哦~
 `
 
 export interface Config {
@@ -31,7 +32,7 @@ export const Config: Schema<Config> = Schema.intersect([
         waitTimeout: Schema.natural().role('ms').description('允许用户返回选择序号的等待时间').default(45000),
     }).description('基础设置'),
     Schema.object({
-        exitCommand: Schema.string().default('0, 不听了').description('退出选择指令，多个指令间请用逗号分隔开'), // 兼容中文逗号、英文逗号
+        exitCommand: Schema.string().default('0, 不听了').description('退出选择指令，多个指令间请用逗号分隔开'),
         menuExitCommandTip: Schema.boolean().default(false).description('是否在歌单内容的后面，加上退出选择指令的文字提示'),
         retryExitCommandTip: Schema.boolean().default(true).description('是否交互序号错误时，加上退出选择指令的文字提示'),
         recall: Schema.boolean().default(true).description('是否在发送语音后撤回 `generationTip`'),
@@ -101,16 +102,19 @@ async function generateSongListImage(pptr: Puppeteer, listText: string, cfg: Con
     const backgroundColor = `rgb(${backgroundBrightness},${backgroundBrightness},${backgroundBrightness})`
 
     const htmlContent = `
-      <html>
+      <!DOCTYPE html>
+      <html lang="zh">
         <head>
-          <meta name='viewport' content='width=device-width, initial-scale=1.0' />
+          <title>music</title>
+          <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
           <style>
             body {
               margin: 0;
               font-family: PingFang SC, Hiragino Sans GB, Microsoft YaHei, SimSun, sans-serif;
               font-size: 16px;
-              background: ${backgroundColor}; /* 背景颜色 */
-              color: ${textColor}; /* 文本颜色 */
+              background: ${backgroundColor};
+              color: ${textColor};
               min-height: 100vh;
             }
             #song-list {
@@ -118,13 +122,12 @@ async function generateSongListImage(pptr: Puppeteer, listText: string, cfg: Con
               display: inline-block; /* 使div适应内容宽度 */
               max-width: 100%; /* 防止内容溢出 */
               white-space: nowrap; /* 防止歌曲名称换行 */
+              transform: scale(0.77);
             }
           </style>
         </head>
         <body>
-          <div id='song-list'>
-            ${listText}
-          </div>
+          <div id="song-list">${listText}</div>
         </body>
       </html>
     `
