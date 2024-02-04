@@ -133,9 +133,7 @@ async function generateSongListImage(pptr: Puppeteer, listText: string, cfg: Con
         const { left: x, top: y, width, height } = songList.getBoundingClientRect()
         return { x, y, width, height }
     })
-    const screenshot = await page.screenshot({
-        clip,
-    })
+    const screenshot = await page.screenshot({ clip })
     page.close()
     return screenshot
 }
@@ -171,22 +169,38 @@ export function apply(ctx: Context, cfg: Config) {
             const exitCommands = cfg.exitCommand.split(/[,，]/).map(cmd => cmd.trim())
             const waitTimeInSeconds = cfg.waitTimeout / 1000
             const exitCommandTip = cfg.menuExitCommandTip ? `退出选择请发[${exitCommands}]中的任意内容<br /><br />` : ''
+
+            let quoteId = session.messageId
+
             if (cfg.imageMode) {
                 const imageBuffer = await generateSongListImage(ctx.puppeteer, songListText, cfg)
-                await session.send(h.image(imageBuffer, 'image/png') + `${exitCommandTip}请在${waitTimeInSeconds}秒内，<br />输入歌曲对应的序号`)
+                const payload = [
+                    h.quote(quoteId),
+                    h.image(imageBuffer, 'image/png'),
+                    h.text(`${exitCommandTip}请在${waitTimeInSeconds}秒内，`),
+                    h('br'),
+                    h.text('输入歌曲对应的序号')
+                ]
+                const msg = await session.send(payload)
+                quoteId = msg.at(-1)
             } else {
-                await session.send(songListText + `<br /><br />${exitCommandTip}请在${waitTimeInSeconds}秒内，<br />输入歌曲对应的序号`)
+                const msg = await session.send(songListText + `<br /><br />${exitCommandTip}请在${waitTimeInSeconds}秒内，<br />输入歌曲对应的序号`)
+                quoteId = msg.at(-1)
             }
 
-            const input = await session.prompt(cfg.waitTimeout)
-            if (!input) return '输入超时，已取消点歌。'
+            const input = await session.prompt((session) => {
+                quoteId = session.messageId
+                return session.content
+            }, { timeout: cfg.waitTimeout })
+
+            if (!input) return `${quoteId ? h.quote(quoteId) : ''}输入超时，已取消点歌。`
             if (exitCommands.includes(input)) {
-                return '已退出歌曲选择。'
+                return `${h.quote(quoteId)}已退出歌曲选择。`
             }
 
-            const num = +input
-            if (Number.isNaN(num) || num < 1 || num > (qqData?.length ?? 0) + (neteaseData?.length ?? 0)) {
-                return '输入的序号错误，已退出歌曲选择。'
+            const serialNumber = +input
+            if (Number.isNaN(serialNumber) || serialNumber < 1 || serialNumber > (qqData?.length ?? 0) + (neteaseData?.length ?? 0)) {
+                return `${h.quote(quoteId)}输入的序号错误，已退出歌曲选择。`
             }
 
             const songData: SongData[] = []
@@ -198,7 +212,7 @@ export function apply(ctx: Context, cfg: Config) {
             }
 
             let platform: Platform, songid: number
-            const selected = songData[num - 1]
+            const selected = songData[serialNumber - 1]
             if (selected.songurl.includes('163.com')) {
                 platform = 'NetEase Music'
                 songid = selected.id
@@ -207,7 +221,7 @@ export function apply(ctx: Context, cfg: Config) {
                 platform = 'QQ Music'
                 songid = selected.songid
             }
-            if (!platform) return '获取歌曲失败。'
+            if (!platform) return `${h.quote(quoteId)}获取歌曲失败。`
 
             const [tipMessageId] = await session.send(cfg.generationTip)
 
@@ -228,10 +242,10 @@ export function apply(ctx: Context, cfg: Config) {
                 } catch (e) {
                     logger.error(e)
                 } finally {
-                    session.bot.deleteMessage(session.channelId, tipMessageId)
+                    if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
                 }
             } else {
-                return '获取歌曲失败。'
+                return `${h.quote(quoteId)}获取歌曲失败。`
             }
         })
 }
