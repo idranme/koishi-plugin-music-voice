@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-music-downloadvoice-api",
-  "description": "/*语音点歌*/🎵语音点歌，adapter-qq也可以用🤩提供QQ、网易云平台的音乐，付费的也可以欸？[食用方法](https://www.npmjs.com/package/koishi-plugin-music-downloadvoice-api)",
-  "version": "0.2.8",
+  "description": "Sing by voice",
+  "version": "1.0.0-beta.1",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
@@ -9,28 +9,25 @@
     "dist"
   ],
   "license": "MIT",
-  "scripts": {},
   "keywords": [
     "chatbot",
     "koishi",
     "plugin",
-    "music"
+    "music",
+    "voice"
   ],
   "koishi": {
     "description": {
-      "en": "music-downloadvoice-api",
-      "zh": "/*语音点歌*/🎵语音点歌，adapter-qq也可以用🤩提供QQ、网易云平台的音乐，付费的也可以欸？[食用方法](https://www.npmjs.com/package/koishi-plugin-music-downloadvoice-api)"
-    
+      "en": "Sing by voice",
+      "zh": "/*语音点歌*/🎵提供QQ、网易云平台的音乐，付费的也可以欸？"
     }
-    
   },
-  
-  
   "peerDependencies": {
-    "koishi": "^4.16.0",
-    "koishi-plugin-silk": "^0.2.0",
+    "koishi": "^4.16.6"
+  },
+  "devDependencies": {
+    "koishi-plugin-ffmpeg": "^1.1.0",
     "koishi-plugin-puppeteer": "^3.7.3",
-    "koishi-plugin-ffmpeg": "^1.1.0"
+    "koishi-plugin-silk": "^0.2.0"
   }
-  
 }
