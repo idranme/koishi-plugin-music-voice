@@ -27,13 +27,13 @@ export interface Config {
 
 export const Config: Schema<Config> = Schema.intersect([
     Schema.object({
-        generationTip: Schema.string().description('生成语音中返回的文字提示内容').default('生成语音中…'),
-        waitTimeout: Schema.natural().role('ms').description('允许用户返回选择序号的等待时间').default(45000)
+        generationTip: Schema.string().description('生成语音时返回的文字提示内容').default('生成语音中…'),
+        waitTimeout: Schema.natural().role('ms').description('等待用户选择歌曲序号的最长时间').default(45000)
     }).description('基础设置'),
     Schema.object({
         exitCommand: Schema.string().description('退出选择指令，多个指令间请用逗号分隔开').default('0, 不听了'),
         menuExitCommandTip: Schema.boolean().description('是否在歌单内容的后面，加上退出选择指令的文字提示').default(false),
-        recall: Schema.boolean().description('是否在发送语音后撤回 `generationTip`').default(true)
+        recall: Schema.boolean().description('是否在发送语音后撤回 generationTip').default(true)
     }).description('进阶设置'),
     Schema.object({
         imageMode: Schema.boolean().description('开启后返回图片歌单，关闭后返回文本歌单').default(true),
@@ -80,14 +80,12 @@ type Platform = 'QQ Music' | 'NetEase Music'
 async function search(http: Quester, platform: Platform, params: SearchParams) {
     let apiBase = 'https://api.xingzhige.com/API/QQmusicVIP'
     if (platform === 'NetEase Music') apiBase = 'https://api.xingzhige.com/API/NetEase_CloudMusic_new'
-    return await http.get<SearchResponse>(apiBase, {
-        params
-    })
+    return await http.get<SearchResponse>(apiBase, { params })
 }
 
 function formatSongList(data: SongData[], platform: Platform, startIndex: number) {
-    const formattedList = data.map((song, index) => `${index + startIndex + 1}. ${song.songname} -- ${song.name}`).join('<br />')
-    return `<b>${platform}</b>:<br />${formattedList}`
+    const formatted = data.map((song, index) => `${index + startIndex + 1}. ${song.songname} -- ${song.name}`).join('<br />')
+    return `<b>${platform}</b>:<br />${formatted}`
 }
 
 async function generateSongListImage(pptr: Puppeteer, listText: string, cfg: Config) {
@@ -116,7 +114,7 @@ async function generateSongListImage(pptr: Puppeteer, listText: string, cfg: Con
               display: inline-block; /* 使div适应内容宽度 */
               max-width: 100%; /* 防止内容溢出 */
               white-space: nowrap; /* 防止歌曲名称换行 */
-              transform: scale(0.77);
+              transform: scale(0.75);
             }
           </style>
         </head>
@@ -223,7 +221,7 @@ export function apply(ctx: Context, cfg: Config) {
             }
             if (!platform) return `${h.quote(quoteId)}获取歌曲失败。`
 
-            const [tipMessageId] = await session.send(cfg.generationTip)
+            const [tipMessageId] = await session.send(h.quote(quoteId) + cfg.generationTip)
 
             const song = await search(ctx.http, platform, { songid })
             if (song.code === 0) {
