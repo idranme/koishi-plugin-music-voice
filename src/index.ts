@@ -1,4 +1,4 @@
-import { Context, Schema, Quester, h } from 'koishi'
+import { Context, Schema, Quester, h, isNullable } from 'koishi'
 import Puppeteer from 'koishi-plugin-puppeteer'
 import { } from 'koishi-plugin-ffmpeg'
 import { } from 'koishi-plugin-silk'
@@ -163,35 +163,35 @@ export function apply(ctx: Context, cfg: Config) {
             const qqListText = qqData?.length ? formatSongList(qqData, 'QQ Music', 0) : '<b>QQ Music</b>: 无法获取歌曲列表'
             const neteaseListText = neteaseData?.length ? formatSongList(neteaseData, 'NetEase Music', qqData?.length ?? 0) : '<b>NetEase Music</b>: 无法获取歌曲列表'
 
-            const songListText = `${qqListText}<br /><br />${neteaseListText}`
+            const listText = `${qqListText}<br /><br />${neteaseListText}`
             const exitCommands = cfg.exitCommand.split(/[,，]/).map(cmd => cmd.trim())
-            const waitTimeInSeconds = cfg.waitTimeout / 1000
             const exitCommandTip = cfg.menuExitCommandTip ? `退出选择请发[${exitCommands}]中的任意内容<br /><br />` : ''
 
             let quoteId = session.messageId
 
             if (cfg.imageMode) {
-                const imageBuffer = await generateSongListImage(ctx.puppeteer, songListText, cfg)
+                const imageBuffer = await generateSongListImage(ctx.puppeteer, listText, cfg)
                 const payload = [
                     h.quote(quoteId),
                     h.image(imageBuffer, 'image/png'),
-                    h.text(`${exitCommandTip}请在${waitTimeInSeconds}秒内，`),
-                    h('br'),
+                    h.text(`${exitCommandTip.replaceAll('<br />', '\n')}请在 `),
+                    h('i18n:time', { value: cfg.waitTimeout }),
+                    h.text('内，\n'),
                     h.text('输入歌曲对应的序号')
                 ]
                 const msg = await session.send(payload)
                 quoteId = msg.at(-1)
             } else {
-                const msg = await session.send(songListText + `<br /><br />${exitCommandTip}请在${waitTimeInSeconds}秒内，<br />输入歌曲对应的序号`)
+                const msg = await session.send(h.quote(quoteId) + listText + `<br /><br />${exitCommandTip}请在 <i18n:time value=${cfg.waitTimeout}/>内，<br />输入歌曲对应的序号`)
                 quoteId = msg.at(-1)
             }
 
             const input = await session.prompt((session) => {
                 quoteId = session.messageId
-                return session.content
+                return h.select(session.elements, 'text').toString()
             }, { timeout: cfg.waitTimeout })
 
-            if (!input) return `${quoteId ? h.quote(quoteId) : ''}输入超时，已取消点歌。`
+            if (isNullable(input)) return `${quoteId ? h.quote(quoteId) : ''}输入超时，已取消点歌。`
             if (exitCommands.includes(input)) {
                 return `${h.quote(quoteId)}已退出歌曲选择。`
             }
