@@ -202,10 +202,10 @@ export function apply(ctx: Context, cfg: Config) {
             }
 
             const songData: SongData[] = []
-            if (qqData) {
+            if (qqData?.length) {
                 songData.push(...qqData)
             }
-            if (neteaseData) {
+            if (neteaseData?.length) {
                 songData.push(...neteaseData)
             }
 
