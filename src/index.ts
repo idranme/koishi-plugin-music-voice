@@ -46,7 +46,7 @@ interface SongData {
     subtitle?: string
     name: string
     album: string
-    pay: string
+    pay?: string
     song_type?: string
     type?: number
     songid?: number
@@ -57,30 +57,86 @@ interface SongData {
     interval?: string
     size?: string
     kbps?: string
-    cover: string
+    cover?: string
     songurl: string
-    src: string
+    src?: string
     id?: number
 }
 
-interface SearchResponse {
+interface SearchXZGResponse {
     code: number
     msg: string
     data: SongData[] | SongData
 }
 
-interface SearchParams {
+interface SearchXZGParams {
     name?: string
     n?: number
     songid?: number
+    pagesize?: number
+    max?: number
+}
+
+interface SearchQQResponse {
+    code: number
+    ts: number
+    start_ts: number
+    traceid: string
+    request: {
+        code: number
+        data: {
+            body: {
+                item_song: {
+                    album: {
+                        name: string
+                    }
+                    name: string
+                    id: number
+                    mid: string
+                    singer: {
+                        name: string
+                    }[]
+                }[]
+            },
+            code: number
+            feedbackURL: string
+            meta: unknown
+            ver: number
+        }
+    }
 }
 
 type Platform = 'QQ Music' | 'NetEase Music'
 
-async function search(http: Quester, platform: Platform, params: SearchParams) {
+async function searchXZG(http: Quester, platform: Platform, params: SearchXZGParams) {
     let apiBase = 'https://api.xingzhige.com/API/QQmusicVIP'
     if (platform === 'NetEase Music') apiBase = 'https://api.xingzhige.com/API/NetEase_CloudMusic_new'
-    return await http.get<SearchResponse>(apiBase, { params })
+    return await http.get<SearchXZGResponse>(apiBase, { params })
+}
+
+async function searchQQ(http: Quester, query: string) {
+    return await http.post<SearchQQResponse>('https://u.y.qq.com/cgi-bin/musicu.fcg', {
+        comm: {
+            ct: 11,
+            cv: '1929'
+        },
+        request: {
+            module: 'music.search.SearchCgiService',
+            method: 'DoSearchForQQMusicLite',
+            param: {
+                search_id: '83397431192690042',
+                remoteplace: 'search.android.keyboard',
+                query,
+                search_type: 0,
+                num_per_page: 10,
+                page_num: 1,
+                highlight: 1,
+                nqc_flag: 0,
+                page_id: 1,
+                grp: 1
+            }
+        }
+    })
 }
 
 function formatSongList(data: SongData[], platform: Platform, startIndex: number) {
@@ -144,14 +200,28 @@ export function apply(ctx: Context, cfg: Config) {
         .action(async ({ session }, keyword) => {
             if (!keyword) return '请输入歌曲相关信息。'
 
-            let qq: SearchResponse, netease: SearchResponse
+            let qq: SearchXZGResponse, netease: SearchXZGResponse
             try {
-                qq = await search(ctx.http, 'QQ Music', { name: keyword })
+                const { code, request } = await searchQQ(ctx.http, keyword)
+                const item = request?.data?.body?.item_song
+                qq = {
+                    code,
+                    msg: '',
+                    data: Array.isArray(item) ? item.map(v => {
+                        return {
+                            songname: v.name,
+                            album: v.album.name,
+                            songid: v.id,
+                            songurl: `https://y.qq.com/n/ryqq/songDetail/${v.mid}`,
+                            name: v.singer.map(v => v.name).join('/')
+                        }
+                    }) : []
+                }
             } catch (e) {
                 logger.warn('获取QQ音乐数据时发生错误', e)
             }
             try {
-                netease = await search(ctx.http, 'NetEase Music', { name: keyword })
+                netease = await searchXZG(ctx.http, 'NetEase Music', { name: keyword })
             } catch (e) {
                 logger.warn('获取网易云音乐数据时发生错误', e)
             }
@@ -198,7 +268,7 @@ export function apply(ctx: Context, cfg: Config) {
 
             const serialNumber = +input
             if (Number.isNaN(serialNumber) || serialNumber < 1 || serialNumber > (qqData?.length ?? 0) + (neteaseData?.length ?? 0)) {
-                return `${h.quote(quoteId)}输入的序号错误，已退出歌曲选择。`
+                return `${h.quote(quoteId)}序号输入错误，已退出歌曲选择。`
             }
 
             const songData: SongData[] = []
@@ -223,7 +293,7 @@ export function apply(ctx: Context, cfg: Config) {
 
             const [tipMessageId] = await session.send(h.quote(quoteId) + cfg.generationTip)
 
-            const song = await search(ctx.http, platform, { songid })
+            const song = await searchXZG(ctx.http, platform, { songid })
             if (song.code === 0) {
                 const data = song.data as SongData
                 try {
