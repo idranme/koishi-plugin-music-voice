@@ -90,12 +90,13 @@ interface SearchQQResponse {
                     album: {
                         name: string
                     }
-                    name: string
                     id: number
                     mid: string
+                    name: string
                     singer: {
                         name: string
                     }[]
+                    title: string
                 }[]
             },
             code: number
@@ -209,7 +210,7 @@ export function apply(ctx: Context, cfg: Config) {
                     msg: '',
                     data: Array.isArray(item) ? item.map(v => {
                         return {
-                            songname: v.name,
+                            songname: v.title.replaceAll('<em>', '').replaceAll('</em>', ''),
                             album: v.album.name,
                             songid: v.id,
                             songurl: `https://y.qq.com/n/ryqq/songDetail/${v.mid}`,
