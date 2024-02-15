@@ -10,9 +10,7 @@ export const inject = {
 }
 
 export const usage = `
-[食用方法点此获取](https://www.npmjs.com/package/koishi-plugin-music-downloadvoice-api)
-
-生成语音的速度取决于网速和设备性能哦~
+<a target="_blank" href="https://github.com/idanran/koishi-plugin-music-downloadvoice-api?tab=readme-ov-file#%E4%BD%BF%E7%94%A8%E8%AF%A5%E6%8F%92%E4%BB%B6%E6%90%9C%E7%B4%A2%E5%B9%B6%E8%8E%B7%E5%8F%96%E6%AD%8C%E6%9B%B2">食用方法点此获取</a>
 `
 
 export interface Config {
@@ -28,7 +26,7 @@ export interface Config {
 export const Config: Schema<Config> = Schema.intersect([
     Schema.object({
         generationTip: Schema.string().description('生成语音时返回的文字提示内容').default('生成语音中…'),
-        waitTimeout: Schema.natural().role('ms').description('等待用户选择歌曲序号的最长时间').default(45000)
+        waitTimeout: Schema.natural().role('ms').min(1000).step(1000).description('等待用户选择歌曲序号的最长时间').default(45000)
     }).description('基础设置'),
     Schema.object({
         exitCommand: Schema.string().description('退出选择指令，多个指令间请用逗号分隔开').default('0, 不听了'),
