@@ -146,8 +146,6 @@ function formatSongList(data: SongData[], platform: Platform, startIndex: number
 async function generateSongListImage(pptr: Puppeteer, listText: string, cfg: Config) {
     const textBrightness = cfg.darkMode ? 255 : 0
     const backgroundBrightness = cfg.darkMode ? 0 : 255
-    const textColor = `rgb(${textBrightness},${textBrightness},${textBrightness})`
-    const backgroundColor = `rgb(${backgroundBrightness},${backgroundBrightness},${backgroundBrightness})`
     const htmlContent = `
       <!DOCTYPE html>
       <html lang="zh">
@@ -160,8 +158,8 @@ async function generateSongListImage(pptr: Puppeteer, listText: string, cfg: Con
               margin: 0;
               font-family: PingFang SC, Hiragino Sans GB, Microsoft YaHei, SimSun, sans-serif;
               font-size: 16px;
-              background: ${backgroundColor};
-              color: ${textColor};
+              background: rgb(${backgroundBrightness},${backgroundBrightness},${backgroundBrightness});
+              color: rgb(${textBrightness},${textBrightness},${textBrightness});
               min-height: 100vh;
             }
             #song-list {
@@ -201,10 +199,11 @@ export function apply(ctx: Context, cfg: Config) {
 
             let qq: SearchXZGResponse, netease: SearchXZGResponse
             try {
-                const { code, request } = await searchQQ(ctx.http, keyword)
-                const item = request?.data?.body?.item_song
+                let res = await searchQQ(ctx.http, keyword)
+                if (typeof res === 'string') res = JSON.parse(res)
+                const item = res.request?.data?.body?.item_song
                 qq = {
-                    code,
+                    code: res.code,
                     msg: '',
                     data: Array.isArray(item) ? item.map(v => {
                         return {
@@ -225,8 +224,8 @@ export function apply(ctx: Context, cfg: Config) {
                 logger.warn('获取网易云音乐数据时发生错误', e)
             }
 
-            const qqData = qq.data as SongData[]
-            const neteaseData = netease.data as SongData[]
+            const qqData = qq?.data as SongData[]
+            const neteaseData = netease?.data as SongData[]
             if (!qqData?.length && !neteaseData?.length) return '无法获取歌曲列表，请稍后再试。'
 
             const qqListText = qqData?.length ? formatSongList(qqData, 'QQ Music', 0) : '<b>QQ Music</b>: 无法获取歌曲列表'
