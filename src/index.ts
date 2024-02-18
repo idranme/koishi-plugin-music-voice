@@ -108,8 +108,8 @@ interface SearchQQResponse {
 type Platform = 'QQ Music' | 'NetEase Music'
 
 async function searchXZG(http: Quester, platform: Platform, params: SearchXZGParams) {
-    let apiBase = 'https://api.xingzhige.com/API/QQmusicVIP'
-    if (platform === 'NetEase Music') apiBase = 'https://api.xingzhige.com/API/NetEase_CloudMusic_new'
+    let apiBase = 'https://api.xingzhige.com/API/QQmusicVIP/'
+    if (platform === 'NetEase Music') apiBase = 'https://api.xingzhige.com/API/NetEase_CloudMusic_new/'
     return await http.get<SearchXZGResponse>(apiBase, { params })
 }
 
