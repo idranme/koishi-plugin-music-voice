@@ -250,7 +250,7 @@ export function apply(ctx: Context, cfg: Config) {
                 const msg = await session.send(payload)
                 quoteId = msg.at(-1)
             } else {
-                const msg = await session.send(h.quote(quoteId) + listText + `<br /><br />${exitCommandTip}请在 <i18n:time value=${cfg.waitTimeout}/>内，<br />输入歌曲对应的序号`)
+                const msg = await session.send(`${h.quote(quoteId)}${listText}<br /><br />${exitCommandTip}请在 <i18n:time value="${cfg.waitTimeout}"/>内，<br />输入歌曲对应的序号`)
                 quoteId = msg.at(-1)
             }
 
