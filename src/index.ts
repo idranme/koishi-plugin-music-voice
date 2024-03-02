@@ -305,13 +305,15 @@ export function apply(ctx: Context, cfg: Config) {
                     } else {
                         await session.send(h.audio(data.src))
                     }
-                } catch (e) {
-                    logger.error(e)
-                } finally {
+                } catch (err) {
                     if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
+                    throw err
                 }
+                if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
             } else {
-                return `${h.quote(quoteId)}获取歌曲失败。`
+                if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
+                const msg = song.msg ? (song.msg + '，') : ''
+                return `${h.quote(quoteId)}${msg}获取歌曲失败。`
             }
         })
 }
