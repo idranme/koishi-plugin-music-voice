@@ -5,8 +5,7 @@ import { } from 'koishi-plugin-silk'
 
 export const name = 'music-downloadvoice-api'
 export const inject = {
-    required: ['http', 'puppeteer'],
-    optional: ['ffmpeg', 'silk']
+    required: ['http', 'puppeteer']
 }
 
 export const usage = `
@@ -295,16 +294,7 @@ export function apply(ctx: Context, cfg: Config) {
             if (song.code === 0) {
                 const data = song.data as SongData
                 try {
-                    if (session.platform === 'qq') {
-                        if (!ctx.silk) throw new Error('silk 服务未加载')
-                        if (!ctx.ffmpeg) throw new Error('ffmpeg 服务未加载')
-                        const input = await ctx.http.file(data.src)
-                        const pcm = await ctx.ffmpeg.builder().input(Buffer.from(input.data)).outputOption('-ar', '24000', '-ac', '1', '-f', 's16le').run('buffer')
-                        const silk = await ctx.silk.encode(pcm, 24000)
-                        await session.send(h.audio(silk.data, 'audio/amr'))
-                    } else {
-                        await session.send(h.audio(data.src))
-                    }
+                    await session.send(h.audio(data.src))
                 } catch (err) {
                     if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
                     throw err
