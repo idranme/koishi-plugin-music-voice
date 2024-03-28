@@ -278,11 +278,11 @@ export function apply(ctx: Context, cfg: Config) {
 
             let platform: Platform, songid: number
             const selected = songData[serialNumber - 1]
-            if (selected.songurl.includes('163.com')) {
+            if (selected.songurl.includes('163.com/')) {
                 platform = 'NetEase Music'
                 songid = selected.id
             }
-            if (selected.songurl.includes('qq.com')) {
+            if (selected.songurl.includes('qq.com/')) {
                 platform = 'QQ Music'
                 songid = selected.songid
             }
