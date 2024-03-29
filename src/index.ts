@@ -302,7 +302,15 @@ export function apply(ctx: Context, cfg: Config) {
                 if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
             } else {
                 if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
-                const msg = song.msg ? (song.msg + '，') : ''
+                let msg = song.msg || ''
+                if (msg) {
+                    const strAry = msg.split('')
+                    if ([',', '.', '，', '。'].includes(strAry.at(-1))) {
+                        strAry.pop()
+                    }
+                    strAry.push('，')
+                    msg = strAry.join('')
+                }
                 return `${h.quote(quoteId)}${msg}获取歌曲失败。`
             }
         })
