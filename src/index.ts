@@ -1,11 +1,10 @@
 import { Context, Schema, Quester, h, isNullable } from 'koishi'
-import Puppeteer from 'koishi-plugin-puppeteer'
-import { } from 'koishi-plugin-ffmpeg'
-import { } from 'koishi-plugin-silk'
+import type Puppeteer from 'koishi-plugin-puppeteer'
 
 export const name = 'music-downloadvoice-api'
 export const inject = {
-    required: ['http', 'puppeteer']
+    required: ['http'],
+    optional: ['puppeteer']
 }
 
 export const usage = `
@@ -28,14 +27,14 @@ export const Config: Schema<Config> = Schema.intersect([
         waitTimeout: Schema.natural().role('ms').min(1000).step(1000).description('等待用户选择歌曲序号的最长时间').default(45000)
     }).description('基础设置'),
     Schema.object({
+        imageMode: Schema.boolean().description('开启后返回图片歌单，关闭后返回文本歌单').required(),
+        darkMode: Schema.boolean().description('是否开启图片歌单暗黑模式').default(true)
+    }).description('歌单设置'),
+    Schema.object({
         exitCommand: Schema.string().description('退出选择指令，多个指令间请用逗号分隔开').default('0, 不听了'),
         menuExitCommandTip: Schema.boolean().description('是否在歌单内容的后面，加上退出选择指令的文字提示').default(false),
         recall: Schema.boolean().description('是否在发送语音后撤回 generationTip').default(true)
     }).description('进阶设置'),
-    Schema.object({
-        imageMode: Schema.boolean().description('开启后返回图片歌单，关闭后返回文本歌单').default(true),
-        darkMode: Schema.boolean().description('是否开启暗黑模式').default(true)
-    }).description('图片歌单设置'),
 ])
 
 interface SongData {
@@ -188,6 +187,16 @@ async function generateSongListImage(pptr: Puppeteer, listText: string, cfg: Con
     return screenshot
 }
 
+function timeStringToSeconds(timeStr: string): number {
+    // timeStr: MM分SS秒
+    const arr = timeStr.replace('秒', '').split('分').map(Number)
+    if (arr.length === 2) {
+        return arr[0] * 60 + arr[1]
+    } else {
+        return arr[0]
+    }
+}
+
 export function apply(ctx: Context, cfg: Config) {
     const logger = ctx.logger('music-downloadvoice-api')
 
@@ -237,6 +246,7 @@ export function apply(ctx: Context, cfg: Config) {
             let quoteId = session.messageId
 
             if (cfg.imageMode) {
+                if (!ctx.puppeteer) throw new Error('发送图片歌单需启用 puppeteer 服务')
                 const imageBuffer = await generateSongListImage(ctx.puppeteer, listText, cfg)
                 const payload = [
                     h.quote(quoteId),
@@ -292,9 +302,10 @@ export function apply(ctx: Context, cfg: Config) {
 
             const song = await searchXZG(ctx.http, platform, { songid })
             if (song.code === 0) {
-                const data = song.data as SongData
+                const { src, interval } = song.data as SongData
+                const duration = timeStringToSeconds(interval)
                 try {
-                    await session.send(h.audio(data.src))
+                    await session.send(h.audio(src, { duration }))
                 } catch (err) {
                     if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
                     throw err
