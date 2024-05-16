@@ -1,5 +1,5 @@
-import { Context, Schema, Quester, h, isNullable } from 'koishi'
-import type Puppeteer from 'koishi-plugin-puppeteer'
+import { Context, Schema, h, isNullable } from 'koishi'
+import { } from 'koishi-plugin-puppeteer'
 
 export const name = 'music-downloadvoice-api'
 export const inject = {
@@ -8,7 +8,7 @@ export const inject = {
 }
 
 export const usage = `
-<a target="_blank" href="https://github.com/idanran/koishi-plugin-music-downloadvoice-api?tab=readme-ov-file#%E4%BD%BF%E7%94%A8%E8%AF%A5%E6%8F%92%E4%BB%B6%E6%90%9C%E7%B4%A2%E5%B9%B6%E8%8E%B7%E5%8F%96%E6%AD%8C%E6%9B%B2">食用方法点此获取</a>
+<a target="_blank" href="https://github.com/idranme/koishi-plugin-music-downloadvoice-api?tab=readme-ov-file#%E4%BD%BF%E7%94%A8%E8%AF%A5%E6%8F%92%E4%BB%B6%E6%90%9C%E7%B4%A2%E5%B9%B6%E8%8E%B7%E5%8F%96%E6%AD%8C%E6%9B%B2">食用方法点此获取</a>
 `
 
 export interface Config {
@@ -105,86 +105,9 @@ interface SearchQQResponse {
 
 type Platform = 'QQ Music' | 'NetEase Music'
 
-async function searchXZG(http: Quester, platform: Platform, params: SearchXZGParams) {
-    let apiBase = 'https://api.xingzhige.com/API/QQmusicVIP/'
-    if (platform === 'NetEase Music') apiBase = 'https://api.xingzhige.com/API/NetEase_CloudMusic_new/'
-    return await http.get<SearchXZGResponse>(apiBase, { params })
-}
-
-async function searchQQ(http: Quester, query: string) {
-    return await http.post<SearchQQResponse>('https://u.y.qq.com/cgi-bin/musicu.fcg', {
-        comm: {
-            ct: 11,
-            cv: '1929'
-        },
-        request: {
-            module: 'music.search.SearchCgiService',
-            method: 'DoSearchForQQMusicLite',
-            param: {
-                search_id: '83397431192690042',
-                remoteplace: 'search.android.keyboard',
-                query,
-                search_type: 0,
-                num_per_page: 10,
-                page_num: 1,
-                highlight: 1,
-                nqc_flag: 0,
-                page_id: 1,
-                grp: 1
-            }
-        }
-    })
-}
-
 function formatSongList(data: SongData[], platform: Platform, startIndex: number) {
-    const formatted = data.map((song, index) => `${index + startIndex + 1}. ${song.songname} -- ${song.name}`).join('<br />')
-    return `<b>${platform}</b>:<br />${formatted}`
-}
-
-async function generateSongListImage(pptr: Puppeteer, listText: string, cfg: Config) {
-    const textBrightness = cfg.darkMode ? 255 : 0
-    const backgroundBrightness = cfg.darkMode ? 0 : 255
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html lang="zh">
-        <head>
-          <title>music</title>
-          <meta charset="UTF-8" />
-          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-          <style>
-            body {
-              margin: 0;
-              font-family: PingFang SC, Hiragino Sans GB, Microsoft YaHei, SimSun, sans-serif;
-              font-size: 16px;
-              background: rgb(${backgroundBrightness},${backgroundBrightness},${backgroundBrightness});
-              color: rgb(${textBrightness},${textBrightness},${textBrightness});
-              min-height: 100vh;
-            }
-            #song-list {
-              padding: 20px;
-              display: inline-block; /* 使div适应内容宽度 */
-              max-width: 100%; /* 防止内容溢出 */
-              white-space: nowrap; /* 防止歌曲名称换行 */
-              transform: scale(0.75);
-            }
-          </style>
-        </head>
-        <body>
-          <div id="song-list">${listText}</div>
-        </body>
-      </html>
-    `
-
-    const page = await pptr.browser.newPage()
-    await page.setContent(htmlContent)
-    const clip = await page.evaluate(() => {
-        const songList = document.getElementById('song-list')
-        const { left: x, top: y, width, height } = songList.getBoundingClientRect()
-        return { x, y, width, height }
-    })
-    const screenshot = await page.screenshot({ clip })
-    page.close()
-    return screenshot
+    const formatted = data.map((song, index) => `${index + startIndex + 1}. ${song.songname} -- ${song.name}`).join('<br/>')
+    return `<b>${platform}</b>:<br/>${formatted}`
 }
 
 function timeStringToSeconds(timeStr: string): number {
@@ -200,6 +123,77 @@ function timeStringToSeconds(timeStr: string): number {
 export function apply(ctx: Context, cfg: Config) {
     const logger = ctx.logger('music-downloadvoice-api')
 
+    function searchXZG(platform: Platform, params: SearchXZGParams) {
+        const path = platform === 'NetEase Music' ? '/API/NetEase_CloudMusic_new/' : '/API/QQmusicVIP/'
+        return ctx.http.get<SearchXZGResponse>(`https://api.xingzhige.com${path}`, { params })
+    }
+
+    function searchQQ(query: string) {
+        return ctx.http.post<SearchQQResponse>('https://u.y.qq.com/cgi-bin/musicu.fcg', {
+            comm: {
+                ct: 11,
+                cv: '1929'
+            },
+            request: {
+                module: 'music.search.SearchCgiService',
+                method: 'DoSearchForQQMusicLite',
+                param: {
+                    search_id: '83397431192690042',
+                    remoteplace: 'search.android.keyboard',
+                    query,
+                    search_type: 0,
+                    num_per_page: 10,
+                    page_num: 1,
+                    highlight: 1,
+                    nqc_flag: 0,
+                    page_id: 1,
+                    grp: 1
+                }
+            }
+        })
+    }
+
+    async function generateSongListImage(listText: string, cfg: Config): Promise<Buffer> {
+        const textBrightness = cfg.darkMode ? 255 : 0
+        const backgroundBrightness = cfg.darkMode ? 0 : 255
+        const content = `
+          <!DOCTYPE html>
+          <html lang="zh">
+            <head>
+              <title>music</title>
+              <meta charset="UTF-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+              <style>
+                body {
+                  margin: 0;
+                  font-family: PingFang SC, Hiragino Sans GB, Microsoft YaHei, SimSun, sans-serif;
+                  font-size: 16px;
+                  background: rgb(${backgroundBrightness},${backgroundBrightness},${backgroundBrightness});
+                  color: rgb(${textBrightness},${textBrightness},${textBrightness});
+                  min-height: 100vh;
+                }
+                #song-list {
+                  padding: 20px;
+                  display: inline-block; /* 使div适应内容宽度 */
+                  max-width: 100%; /* 防止内容溢出 */
+                  white-space: nowrap; /* 防止歌曲名称换行 */
+                  transform: scale(0.85);
+                }
+              </style>
+            </head>
+            <body>
+              <div id="song-list">${listText}</div>
+            </body>
+          </html>
+        `
+        const page = await ctx.puppeteer.browser.newPage()
+        await page.setContent(content)
+        const list = await page.$('#song-list')
+        const screenshot = await list.screenshot({})
+        page.close()
+        return screenshot
+    }
+
     ctx.command('music <keyword:text>', '搜索歌曲并生成语音')
         .alias('mdff', '点歌')
         .action(async ({ session }, keyword) => {
@@ -207,7 +201,7 @@ export function apply(ctx: Context, cfg: Config) {
 
             let qq: SearchXZGResponse, netease: SearchXZGResponse
             try {
-                let res = await searchQQ(ctx.http, keyword)
+                let res = await searchQQ(keyword)
                 if (typeof res === 'string') res = JSON.parse(res)
                 const item = res.request?.data?.body?.item_song
                 qq = {
@@ -223,13 +217,13 @@ export function apply(ctx: Context, cfg: Config) {
                         }
                     }) : []
                 }
-            } catch (e) {
-                logger.warn('获取QQ音乐数据时发生错误', e)
+            } catch (err) {
+                logger.warn('获取QQ音乐数据时发生错误', err.message)
             }
             try {
-                netease = await searchXZG(ctx.http, 'NetEase Music', { name: keyword })
-            } catch (e) {
-                logger.warn('获取网易云音乐数据时发生错误', e)
+                netease = await searchXZG('NetEase Music', { name: keyword })
+            } catch (err) {
+                logger.warn('获取网易云音乐数据时发生错误', err.message)
             }
 
             const qqData = qq?.data as SongData[]
@@ -239,19 +233,19 @@ export function apply(ctx: Context, cfg: Config) {
             const qqListText = qqData?.length ? formatSongList(qqData, 'QQ Music', 0) : '<b>QQ Music</b>: 无法获取歌曲列表'
             const neteaseListText = neteaseData?.length ? formatSongList(neteaseData, 'NetEase Music', qqData?.length ?? 0) : '<b>NetEase Music</b>: 无法获取歌曲列表'
 
-            const listText = `${qqListText}<br /><br />${neteaseListText}`
+            const listText = `${qqListText}<br/><br/>${neteaseListText}`
             const exitCommands = cfg.exitCommand.split(/[,，]/).map(cmd => cmd.trim())
-            const exitCommandTip = cfg.menuExitCommandTip ? `退出选择请发[${exitCommands}]中的任意内容<br /><br />` : ''
+            const exitCommandTip = cfg.menuExitCommandTip ? `退出选择请发[${exitCommands}]中的任意内容<br/><br/>` : ''
 
             let quoteId = session.messageId
 
             if (cfg.imageMode) {
                 if (!ctx.puppeteer) throw new Error('发送图片歌单需启用 puppeteer 服务')
-                const imageBuffer = await generateSongListImage(ctx.puppeteer, listText, cfg)
+                const imageBuffer = await generateSongListImage(listText, cfg)
                 const payload = [
                     h.quote(quoteId),
                     h.image(imageBuffer, 'image/png'),
-                    h.text(`${exitCommandTip.replaceAll('<br />', '\n')}请在 `),
+                    h.text(`${exitCommandTip.replaceAll('<br/>', '\n')}请在 `),
                     h('i18n:time', { value: cfg.waitTimeout }),
                     h.text('内，\n'),
                     h.text('输入歌曲对应的序号')
@@ -259,13 +253,14 @@ export function apply(ctx: Context, cfg: Config) {
                 const msg = await session.send(payload)
                 quoteId = msg.at(-1)
             } else {
-                const msg = await session.send(`${h.quote(quoteId)}${listText}<br /><br />${exitCommandTip}请在 <i18n:time value="${cfg.waitTimeout}"/>内，<br />输入歌曲对应的序号`)
+                const payload = `${h.quote(quoteId)}${listText}<br/><br/>${exitCommandTip}请在 <i18n:time value="${cfg.waitTimeout}"/>内，<br/>输入歌曲对应的序号`
+                const msg = await session.send(payload)
                 quoteId = msg.at(-1)
             }
 
             const input = await session.prompt((session) => {
                 quoteId = session.messageId
-                return h.select(session.elements, 'text').toString()
+                return h.select(session.elements, 'text').join('')
             }, { timeout: cfg.waitTimeout })
 
             if (isNullable(input)) return `${quoteId ? h.quote(quoteId) : ''}输入超时，已取消点歌。`
@@ -274,7 +269,7 @@ export function apply(ctx: Context, cfg: Config) {
             }
 
             const serialNumber = +input
-            if (Number.isNaN(serialNumber) || serialNumber < 1 || serialNumber > (qqData?.length ?? 0) + (neteaseData?.length ?? 0)) {
+            if (!Number.isInteger(serialNumber) || serialNumber < 1 || serialNumber > (qqData?.length ?? 0) + (neteaseData?.length ?? 0)) {
                 return `${h.quote(quoteId)}序号输入错误，已退出歌曲选择。`
             }
 
@@ -288,11 +283,10 @@ export function apply(ctx: Context, cfg: Config) {
 
             let platform: Platform, songid: number
             const selected = songData[serialNumber - 1]
-            if (selected.songurl.includes('163.com/')) {
+            if (selected.songurl.includes('.163.com/')) {
                 platform = 'NetEase Music'
                 songid = selected.id
-            }
-            if (selected.songurl.includes('qq.com/')) {
+            } else if (selected.songurl.includes('.qq.com/')) {
                 platform = 'QQ Music'
                 songid = selected.songid
             }
@@ -300,7 +294,7 @@ export function apply(ctx: Context, cfg: Config) {
 
             const [tipMessageId] = await session.send(h.quote(quoteId) + cfg.generationTip)
 
-            const song = await searchXZG(ctx.http, platform, { songid })
+            const song = await searchXZG(platform, { songid })
             if (song.code === 0) {
                 const { src, interval } = song.data as SongData
                 const duration = timeStringToSeconds(interval)
@@ -315,12 +309,10 @@ export function apply(ctx: Context, cfg: Config) {
                 if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
                 let msg = song.msg || ''
                 if (msg) {
-                    const strAry = msg.split('')
-                    if ([',', '.', '，', '。'].includes(strAry.at(-1))) {
-                        strAry.pop()
+                    if ([',', '.', '，', '。'].includes(msg.at(-1))) {
+                        msg = msg.slice(0, -1)
                     }
-                    strAry.push('，')
-                    msg = strAry.join('')
+                    msg += '，'
                 }
                 return `${h.quote(quoteId)}${msg}获取歌曲失败。`
             }
