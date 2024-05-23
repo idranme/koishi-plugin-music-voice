@@ -38,22 +38,12 @@ export const Config: Schema<Config> = Schema.intersect([
 ])
 
 interface SongData {
+    [x: string]: number | string
     songname: string
-    subtitle?: string
     name: string
     album: string
-    pay?: string
-    song_type?: string
-    type?: number
     songid?: number
-    mid?: string
-    time?: string
-    bpm?: string
-    quality?: string
     interval?: string
-    size?: string
-    kbps?: string
-    cover?: string
     songurl: string
     src?: string
     id?: number
@@ -83,6 +73,9 @@ interface SearchQQResponse {
         data: {
             body: {
                 item_song: {
+                    action: {
+                        msgdown: number
+                    }
                     album: {
                         name: string
                     }
@@ -106,7 +99,13 @@ interface SearchQQResponse {
 type Platform = 'QQ Music' | 'NetEase Music'
 
 function formatSongList(data: SongData[], platform: Platform, startIndex: number) {
-    const formatted = data.map((song, index) => `${index + startIndex + 1}. ${song.songname} -- ${song.name}`).join('<br/>')
+    const formatted = data.map((song, index) => {
+        let item = `${index + startIndex + 1}. ${song.songname} -- ${song.name}`
+        if (song.msgdown) {
+            item = `<s>${item}</s>`
+        }
+        return item
+    }).join('<br/>')
     return `<b>${platform}</b>:<br/>${formatted}`
 }
 
@@ -179,6 +178,9 @@ export function apply(ctx: Context, cfg: Config) {
                   white-space: nowrap; /* 防止歌曲名称换行 */
                   transform: scale(0.85);
                 }
+                s {
+                    text-decoration-thickness: 1.5px;
+                }
               </style>
             </head>
             <body>
@@ -213,7 +215,8 @@ export function apply(ctx: Context, cfg: Config) {
                             album: v.album.name,
                             songid: v.id,
                             songurl: `https://y.qq.com/n/ryqq/songDetail/${v.mid}`,
-                            name: v.singer.map(v => v.name).join('/')
+                            name: v.singer.map(v => v.name).join('/'),
+                            msgdown: v.action.msgdown
                         }
                     }) : []
                 }
