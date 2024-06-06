@@ -298,18 +298,23 @@ export function apply(ctx: Context, cfg: Config) {
             const [tipMessageId] = await session.send(h.quote(quoteId) + cfg.generationTip)
 
             const song = await searchXZG(platform, { songid })
+            const { channelId } = session
             if (song.code === 0) {
                 const { src, interval } = song.data as SongData
+                if (!src) {
+                    if (cfg.recall) session.bot.deleteMessage(channelId, tipMessageId)
+                    return `${h.quote(quoteId)}获取歌曲失败。`
+                }
                 const duration = timeStringToSeconds(interval)
                 try {
                     await session.send(h.audio(src, { duration }))
                 } catch (err) {
-                    if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
+                    if (cfg.recall) session.bot.deleteMessage(channelId, tipMessageId)
                     throw err
                 }
-                if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
+                if (cfg.recall) session.bot.deleteMessage(channelId, tipMessageId)
             } else {
-                if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
+                if (cfg.recall) session.bot.deleteMessage(channelId, tipMessageId)
                 let msg = song.msg || ''
                 if (msg) {
                     if ([',', '.', '，', '。'].includes(msg.at(-1))) {
