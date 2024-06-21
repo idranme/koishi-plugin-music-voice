@@ -128,7 +128,7 @@ export function apply(ctx: Context, cfg: Config) {
     }
 
     function searchQQ(query: string) {
-        return ctx.http.post<SearchQQResponse>('https://u.y.qq.com/cgi-bin/musicu.fcg', {
+        return ctx.http.post<SearchQQResponse>('https://u6.y.qq.com/cgi-bin/musicu.fcg', {
             comm: {
                 ct: 11,
                 cv: '1929'
@@ -188,7 +188,7 @@ export function apply(ctx: Context, cfg: Config) {
             </body>
           </html>
         `
-        const page = await ctx.puppeteer.browser.newPage()
+        const page = await ctx.puppeteer.page()
         await page.setContent(content)
         const list = await page.$('#song-list')
         const screenshot = await list.screenshot({})
@@ -317,7 +317,7 @@ export function apply(ctx: Context, cfg: Config) {
                 if (cfg.recall) session.bot.deleteMessage(channelId, tipMessageId)
                 let msg = song.msg || ''
                 if (msg) {
-                    if ([',', '.', '，', '。'].includes(msg.at(-1))) {
+                    if ([',', '.', '!', '，', '。', '！'].includes(msg.at(-1))) {
                         msg = msg.slice(0, -1)
                     }
                     msg += '，'
