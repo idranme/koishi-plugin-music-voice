@@ -143,13 +143,13 @@ export function apply(ctx: Context, cfg: Config) {
                     search_type: 0,
                     num_per_page: 10,
                     page_num: 1,
-                    highlight: 1,
+                    highlight: 0,
                     nqc_flag: 0,
                     page_id: 1,
                     grp: 1
                 }
             }
-        })
+        }, { responseType: 'json' })
     }
 
     async function generateSongListImage(listText: string, cfg: Config): Promise<Buffer> {
@@ -203,15 +203,14 @@ export function apply(ctx: Context, cfg: Config) {
 
             let qq: SearchXZGResponse, netease: SearchXZGResponse
             try {
-                let res = await searchQQ(keyword)
-                if (typeof res === 'string') res = JSON.parse(res)
+                const res = await searchQQ(keyword)
                 const item = res.request?.data?.body?.item_song
                 qq = {
                     code: res.code,
                     msg: '',
                     data: Array.isArray(item) ? item.map(v => {
                         return {
-                            songname: v.title.replaceAll('<em>', '').replaceAll('</em>', ''),
+                            songname: v.title,
                             album: v.album.name,
                             songid: v.id,
                             songurl: `https://y.qq.com/n/ryqq/songDetail/${v.mid}`,
