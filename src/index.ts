@@ -165,7 +165,7 @@ export function apply(ctx: Context, cfg: Config) {
               <style>
                 body {
                   margin: 0;
-                  font-family: PingFang SC, Hiragino Sans GB, Microsoft YaHei, SimSun, sans-serif;
+                  font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei", SimSun, sans-serif;
                   font-size: 16px;
                   background: rgb(${backgroundBrightness},${backgroundBrightness},${backgroundBrightness});
                   color: rgb(${textBrightness},${textBrightness},${textBrightness});
@@ -304,9 +304,13 @@ export function apply(ctx: Context, cfg: Config) {
                     if (cfg.recall) session.bot.deleteMessage(channelId, tipMessageId)
                     return `${h.quote(quoteId)}获取歌曲失败。`
                 }
-                const duration = timeStringToSeconds(interval)
                 try {
-                    await session.send(h.audio(src, { duration }))
+                    const duration = timeStringToSeconds(interval)
+                    const url = new URL(src)
+                    if (url.host.startsWith('ws.stream')) {
+                        url.host = url.host.replace('ws.stream', 'isure6.stream')
+                    }
+                    await session.send(h.audio(url.href, { duration }))
                 } catch (err) {
                     if (cfg.recall) session.bot.deleteMessage(channelId, tipMessageId)
                     throw err
