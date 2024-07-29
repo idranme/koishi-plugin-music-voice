@@ -1,5 +1,5 @@
-import { Context, Schema, h, isNullable } from 'koishi'
-import { } from 'koishi-plugin-puppeteer'
+import { Context, Schema, h, isNullable, Time } from 'koishi'
+import type { } from 'koishi-plugin-puppeteer'
 
 export const name = 'music-downloadvoice-api'
 export const inject = {
@@ -19,12 +19,14 @@ export interface Config {
     recall: boolean
     imageMode: boolean
     darkMode: boolean
+    maxDuration: number
 }
 
 export const Config: Schema<Config> = Schema.intersect([
     Schema.object({
         generationTip: Schema.string().description('生成语音时返回的文字提示内容').default('生成语音中…'),
-        waitTimeout: Schema.natural().role('ms').min(1000).step(1000).description('等待用户选择歌曲序号的最长时间').default(45000)
+        waitTimeout: Schema.natural().role('ms').min(Time.second).step(Time.second).description('等待用户选择歌曲序号的最长时间')
+            .default(45 * Time.second)
     }).description('基础设置'),
     Schema.object({
         imageMode: Schema.boolean().description('开启后返回图片歌单，关闭后返回文本歌单').required(),
@@ -33,8 +35,10 @@ export const Config: Schema<Config> = Schema.intersect([
     Schema.object({
         exitCommand: Schema.string().description('退出选择指令，多个指令间请用逗号分隔开').default('0, 不听了'),
         menuExitCommandTip: Schema.boolean().description('是否在歌单内容的后面，加上退出选择指令的文字提示').default(false),
-        recall: Schema.boolean().description('是否在发送语音后撤回 generationTip').default(true)
-    }).description('进阶设置'),
+        recall: Schema.boolean().description('是否在发送语音后撤回 generationTip').default(true),
+        maxDuration: Schema.natural().role('ms').min(Time.minute).step(Time.minute).description('歌曲最长持续时间，单位为毫秒')
+            .default(70 * Time.minute)
+    }).description('进阶设置')
 ])
 
 interface SongData {
@@ -306,6 +310,10 @@ export function apply(ctx: Context, cfg: Config) {
                 }
                 try {
                     const duration = timeStringToSeconds(interval)
+                    if (duration * 1000 > cfg.maxDuration) {
+                        if (cfg.recall) session.bot.deleteMessage(channelId, tipMessageId)
+                        return `${h.quote(quoteId)}歌曲持续时间超出限制。`
+                    }
                     const url = new URL(src)
                     if (url.host.startsWith('ws.stream')) {
                         url.host = url.host.replace('ws.stream', 'isure6.stream')
