@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-music-voice",
   "description": "Provide the selected song as a voice",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
@@ -30,12 +30,9 @@
     }
   },
   "peerDependencies": {
-    "koishi": "^4.17.3",
-    "koishi-plugin-puppeteer": "^3.8.4"
+    "koishi": "^4.17.3"
   },
-  "peerDependenciesMeta": {
-    "koishi-plugin-puppeteer": {
-      "optional": true
-    }
+  "devDependencies": {
+    "koishi-plugin-puppeteer": "^3.8.3"
   }
 }
