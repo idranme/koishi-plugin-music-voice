@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-music-downloadvoice-api",
   "description": "Provide the selected song as a voice",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
@@ -29,9 +29,12 @@
     }
   },
   "peerDependencies": {
-    "koishi": "^4.17.7"
-  },
-  "devDependencies": {
+    "koishi": "^4.17.3",
     "koishi-plugin-puppeteer": "^3.8.4"
+  },
+  "peerDependenciesMeta": {
+    "koishi-plugin-puppeteer": {
+      "optional": true
+    }
   }
 }
