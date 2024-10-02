@@ -1,14 +1,14 @@
 import { Context, Schema, h, isNullable, Time } from 'koishi'
 import type { } from 'koishi-plugin-puppeteer'
 
-export const name = 'music-downloadvoice-api'
+export const name = 'music-voice'
 export const inject = {
   required: ['http'],
   optional: ['puppeteer']
 }
 
 export const usage = `
-<a target="_blank" href="https://github.com/idranme/koishi-plugin-music-downloadvoice-api?tab=readme-ov-file#%E4%BD%BF%E7%94%A8%E8%AF%A5%E6%8F%92%E4%BB%B6%E6%90%9C%E7%B4%A2%E5%B9%B6%E8%8E%B7%E5%8F%96%E6%AD%8C%E6%9B%B2">食用方法点此获取</a>
+<a target="_blank" href="https://github.com/idranme/koishi-plugin-music-voice?tab=readme-ov-file#%E4%BD%BF%E7%94%A8%E8%AF%A5%E6%8F%92%E4%BB%B6%E6%90%9C%E7%B4%A2%E5%B9%B6%E8%8E%B7%E5%8F%96%E6%AD%8C%E6%9B%B2">食用方法点此获取</a>
 `
 
 export interface Config {
@@ -124,7 +124,7 @@ function timeStringToSeconds(timeStr: string): number {
 }
 
 export function apply(ctx: Context, cfg: Config) {
-  const logger = ctx.logger('music-downloadvoice-api')
+  const logger = ctx.logger('music-voice')
 
   function searchXZG(platform: Platform, params: SearchXZGParams) {
     const path = platform === 'NetEase Music' ? '/NetEase_CloudMusic_new/' : '/QQmusicVIP/'

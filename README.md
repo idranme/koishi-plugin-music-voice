@@ -1,6 +1,6 @@
-# koishi-plugin-music-downloadvoice-api
+# koishi-plugin-music-voice
 
-[![npm](https://img.shields.io/npm/v/koishi-plugin-music-downloadvoice-api?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-music-downloadvoice-api)
+[![npm](https://img.shields.io/npm/v/koishi-plugin-music-voice?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-music-voice)
 
 🎵 **语音点歌** - 搜索并提供QQ音乐和网易云音乐的歌曲，交互后发送语音消息，🤩付费的歌曲也可以欸？！
 
@@ -11,7 +11,7 @@
 
 ## 安装
 
-在 Koishi 插件市场搜索并安装 `music-downloadvoice-api`
+在 Koishi 插件市场搜索并安装 `music-voice`
 
 ## 使用该插件搜索并获取歌曲
 

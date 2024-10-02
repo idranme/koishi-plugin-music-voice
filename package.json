@@ -1,7 +1,7 @@
 {
-  "name": "koishi-plugin-music-downloadvoice-api",
+  "name": "koishi-plugin-music-voice",
   "description": "Provide the selected song as a voice",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
@@ -15,11 +15,12 @@
     "plugin",
     "music",
     "voice",
-    "song"
+    "song",
+    "download"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/idranme/koishi-plugin-music-downloadvoice-api.git"
+    "url": "https://github.com/idranme/koishi-plugin-music-voice.git"
   },
   "koishi": {
     "browser": true,
