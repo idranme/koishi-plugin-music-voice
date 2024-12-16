@@ -37,7 +37,7 @@ export const Config: Schema<Config> = Schema.intersect([
     menuExitCommandTip: Schema.boolean().description('是否在歌单内容的后面，加上退出选择指令的文字提示').default(false),
     recall: Schema.boolean().description('是否在发送语音后撤回 generationTip').default(true),
     maxDuration: Schema.natural().role('ms').min(Time.minute).step(Time.minute).description('歌曲最长持续时间，单位为毫秒')
-      .default(70 * Time.minute)
+      .default(30 * Time.minute)
   }).description('进阶设置')
 ])
 
@@ -314,11 +314,11 @@ export function apply(ctx: Context, cfg: Config) {
             if (cfg.recall) session.bot.deleteMessage(channelId, tipMessageId)
             return `${h.quote(quoteId)}歌曲持续时间超出限制。`
           }
-          const url = new URL(src)
+          /*const url = new URL(src)
           if (url.host.startsWith('ws.stream')) {
             url.host = url.host.replace('ws.stream', 'isure6.stream')
-          }
-          await session.send(h.audio(url.href, { duration }))
+          }*/
+          await session.send(h.audio(src, { duration }))
         } catch (err) {
           if (cfg.recall) session.bot.deleteMessage(channelId, tipMessageId)
           throw err
