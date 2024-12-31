@@ -304,7 +304,7 @@ export function apply(ctx: Context, cfg: Config) {
       const { channelId } = session
       if (song.code === 0) {
         const { src, interval } = song.data as SongData
-        if (!src) {
+        if (!src || src.startsWith('无法')) {
           if (cfg.recall) session.bot.deleteMessage(channelId, tipMessageId)
           return `${h.quote(quoteId)}获取歌曲失败。`
         }
