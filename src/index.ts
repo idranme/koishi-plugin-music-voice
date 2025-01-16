@@ -12,6 +12,7 @@ export const usage = `
 `
 
 export interface Config {
+  xingzhigeAPIkey: string
   generationTip: string
   waitTimeout: number
   exitCommand: string
@@ -24,6 +25,7 @@ export interface Config {
 
 export const Config: Schema<Config> = Schema.intersect([
   Schema.object({
+    xingzhigeAPIkey: Schema.string().role('secret').description('星之阁的音乐API的请求key<br>（默认值是作者自己的哦，如果失效了请你自己获取一个）<br>请前往 QQ群 905188643 <br>添加QQ好友 3556898686 <br>私聊发送 `/getapikey` 获得你的APIkey以填入此处 ').default("up8bpg7bItrfvuCaEdG6vrU-Kr5u68LSKpbGUMHSmsM="),
     generationTip: Schema.string().description('生成语音时返回的文字提示内容').default('生成语音中…'),
     waitTimeout: Schema.natural().role('ms').min(Time.second).step(Time.second).description('等待用户选择歌曲序号的最长时间')
       .default(45 * Time.second)
@@ -61,6 +63,7 @@ interface SearchXZGResponse {
 
 interface SearchXZGParams {
   name?: string
+  key?: string
   n?: number
   songid?: number
   pagesize?: number
@@ -227,7 +230,11 @@ export function apply(ctx: Context, cfg: Config) {
         logger.warn('获取QQ音乐数据时发生错误', err.message)
       }
       try {
-        netease = await searchXZG('NetEase Music', { name: keyword })
+        netease = await searchXZG('NetEase Music',
+          {
+            name: keyword,
+            key: cfg.xingzhigeAPIkey
+          })
       } catch (err) {
         logger.warn('获取网易云音乐数据时发生错误', err.message)
       }
@@ -300,7 +307,10 @@ export function apply(ctx: Context, cfg: Config) {
 
       const [tipMessageId] = await session.send(h.quote(quoteId) + cfg.generationTip)
 
-      const song = await searchXZG(platform, { songid })
+      const song = await searchXZG(platform, {
+        songid,
+        key: cfg.xingzhigeAPIkey
+      })
       const { channelId } = session
       if (song.code === 0) {
         const { src, interval } = song.data as SongData
