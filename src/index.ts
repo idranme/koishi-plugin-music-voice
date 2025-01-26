@@ -316,6 +316,7 @@ export function apply(ctx: Context, cfg: Config) {
         const { src, interval } = song.data as SongData
         if (!src || src.startsWith('无法')) {
           if (cfg.recall) session.bot.deleteMessage(channelId, tipMessageId)
+          ctx.logger.warn(src)
           return `${h.quote(quoteId)}获取歌曲失败。`
         }
         try {
