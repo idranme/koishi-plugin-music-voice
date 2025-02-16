@@ -12,7 +12,6 @@ export const usage = `
 `
 
 export interface Config {
-  xingzhigeAPIkey: string
   generationTip: string
   waitTimeout: number
   exitCommand: string
@@ -21,11 +20,11 @@ export interface Config {
   imageMode: boolean
   darkMode: boolean
   maxDuration: number
+  searchListCount: number
 }
 
 export const Config: Schema<Config> = Schema.intersect([
   Schema.object({
-    xingzhigeAPIkey: Schema.string().role('secret').description('星之阁的音乐API的请求key<br>（默认值是作者自己的哦，如果失效了请你自己获取一个）<br>请前往 QQ群 905188643 <br>添加QQ好友 3556898686 <br>私聊发送 `/getapikey` 获得你的APIkey以填入此处 <br>目前已经用完了`用完了申请新的key也是用完了，所以你得自己申请啦`').default("up8bpg7bItrfvuCaEdG6vrU-Kr5u68LSKpbGUMHSmsM="),
     generationTip: Schema.string().description('生成语音时返回的文字提示内容').default('生成语音中…'),
     waitTimeout: Schema.natural().role('ms').min(Time.second).step(Time.second).description('等待用户选择歌曲序号的最长时间')
       .default(45 * Time.second)
@@ -39,127 +38,81 @@ export const Config: Schema<Config> = Schema.intersect([
     menuExitCommandTip: Schema.boolean().description('是否在歌单内容的后面，加上退出选择指令的文字提示').default(false),
     recall: Schema.boolean().description('是否在发送语音后撤回 generationTip').default(true),
     maxDuration: Schema.natural().role('ms').min(Time.minute).step(Time.minute).description('歌曲最长持续时间，单位为毫秒')
-      .default(30 * Time.minute)
+      .default(30 * Time.minute),
+    searchListCount: Schema.natural().description('搜索歌曲列表的数量').default(20) // 默认搜索列表数量为 20
   }).description('进阶设置')
 ])
 
 interface SongData {
-  [x: string]: number | string
-  songname: string
-  name: string
-  album: string
-  songid?: number
-  interval?: string
-  songurl: string
-  src?: string
-  id?: number
+  id: number;
+  name: string;
+  artists: string;
+  albumName: string;
+  duration: number;
+  lrc?: string;
 }
 
-interface SearchXZGResponse {
-  code: number
-  msg: string
-  data: SongData[] | SongData
+interface NetEaseSearchResponse {
+  result?: {
+    songs?: NetEaseSongItem[];
+  };
 }
 
-interface SearchXZGParams {
-  name?: string
-  key?: string
-  n?: number
-  songid?: number
-  pagesize?: number
-  max?: number
+interface NetEaseSongItem {
+  id: number;
+  name: string;
+  artists: { name: string }[];
+  album: { name: string };
+  duration: number;
 }
 
-interface SearchQQResponse {
-  code: number
-  ts: number
-  start_ts: number
-  traceid: string
-  request: {
-    code: number
-    data: {
-      body: {
-        item_song: {
-          action: {
-            msgdown: number
-          }
-          album: {
-            name: string
-          }
-          id: number
-          mid: string
-          name: string
-          singer: {
-            name: string
-          }[]
-          title: string
-        }[]
-      },
-      code: number
-      feedbackURL: string
-      meta: unknown
-      ver: number
-    }
-  }
-}
 
-type Platform = 'QQ Music' | 'NetEase Music'
+type Platform = 'NetEase Music'
 
 function formatSongList(data: SongData[], platform: Platform, startIndex: number) {
   const formatted = data.map((song, index) => {
-    let item = `${index + startIndex + 1}. ${song.songname} -- ${song.name}`
-    if (song.msgdown) {
-      item = `<s>${item}</s>`
-    }
+    let item = `${index + startIndex + 1}. ${song.name} -- ${song.artists} -- ${song.albumName}`
     return item
   }).join('<br/>')
   return `<b>${platform}</b>:<br/>${formatted}`
 }
 
-function timeStringToSeconds(timeStr: string): number {
-  // timeStr: "mm"分"ss"秒
-  const arr = timeStr.replace('秒', '').split('分').map(Number)
-  if (arr.length === 2) {
-    return arr[0] * 60 + arr[1]
-  } else {
-    return arr[0]
-  }
-}
 
 export function apply(ctx: Context, cfg: Config) {
   const logger = ctx.logger('music-voice')
+  async function searchNetEase(keyword: string, limit: number = 10): Promise<SongData[]> {
+    const searchApiUrl = `https://music.163.com/api/search/get/web?csrf_token=hlpretag=&hlposttag=&s=${encodeURIComponent(keyword)}&type=1&offset=0&total=true&limit=${limit}`;
+    try {
+      const searchApiResponse = await ctx.http.get(searchApiUrl);
+      const parsedSearchApiResponse: NetEaseSearchResponse = JSON.parse(searchApiResponse);
+      const searchData = parsedSearchApiResponse.result;
 
-  function searchXZG(platform: Platform, params: SearchXZGParams) {
-    const path = platform === 'NetEase Music' ? '/NetEase_CloudMusic_new/' : '/QQmusicVIP/'
-    return ctx.http.get<SearchXZGResponse>(`https://api.xingzhige.com/API${path}`, { params })
-  }
-
-  function searchQQ(query: string) {
-    return ctx.http.post<SearchQQResponse>('https://u6.y.qq.com/cgi-bin/musicu.fcg', {
-      comm: {
-        ct: 11,
-        cv: '1929'
-      },
-      request: {
-        module: 'music.search.SearchCgiService',
-        method: 'DoSearchForQQMusicLite',
-        param: {
-          search_id: '83397431192690042',
-          remoteplace: 'search.android.keyboard',
-          query,
-          search_type: 0,
-          num_per_page: 10,
-          page_num: 1,
-          highlight: 0,
-          nqc_flag: 0,
-          page_id: 1,
-          grp: 1
-        }
+      if (!searchData || !searchData.songs || searchData.songs.length === 0) {
+        return [];
       }
-    }, { responseType: 'json' })
+
+      const songList: SongData[] = searchData.songs.map((song) => {
+        return {
+          id: song.id,
+          name: song.name,
+          artists: song.artists.map(artist => artist.name).join('/'),
+          albumName: song.album.name,
+          duration: song.duration // Get duration 
+        };
+      });
+      return songList;
+    } catch (error) {
+      logger.error('网易云音乐搜索出错', error);
+      return [];
+    }
   }
+
 
   async function generateSongListImage(listText: string, cfg: Config) {
+    if (!ctx.puppeteer) {
+      logger.warn('puppeteer 服务未启用，无法生成图片歌单。');
+      return null;
+    }
     const textChannel = cfg.darkMode ? 255 : 0
     const backgroundChannel = cfg.darkMode ? 0 : 255
     const content = `
@@ -198,63 +151,42 @@ export function apply(ctx: Context, cfg: Config) {
     const page = await ctx.puppeteer.page()
     await page.setContent(content)
     const list = await page.$('#song-list')
+    if (!list) return null; // 避免 list 为 null 导致报错
     const screenshot = await list.screenshot({})
     page.close()
     return screenshot
   }
 
-  ctx.command('music <keyword:text>', '搜索歌曲并生成语音')
+  ctx.command('music <keyword:text>', '搜索歌曲并播放网易云音乐')
     .alias('mdff', '点歌')
     .action(async ({ session }, keyword) => {
       if (!keyword) return '请输入歌曲相关信息。'
 
-      let qq: SearchXZGResponse, netease: SearchXZGResponse
+      let neteaseData: SongData[] = [];
       try {
-        const res = await searchQQ(keyword)
-        const item = res.request?.data?.body?.item_song
-        qq = {
-          code: res.code,
-          msg: '',
-          data: Array.isArray(item) ? item.map(v => {
-            return {
-              songname: v.title,
-              album: v.album.name,
-              songid: v.id,
-              songurl: `https://y.qq.com/n/ryqq/songDetail/${v.mid}`,
-              name: v.singer.map(v => v.name).join('/'),
-              msgdown: v.action.msgdown
-            }
-          }) : []
-        }
-      } catch (err) {
-        logger.warn('获取QQ音乐数据时发生错误', err.message)
-      }
-      try {
-        netease = await searchXZG('NetEase Music',
-          {
-            name: keyword,
-            key: cfg.xingzhigeAPIkey
-          })
+        neteaseData = await searchNetEase(keyword, cfg.searchListCount)
       } catch (err) {
         logger.warn('获取网易云音乐数据时发生错误', err.message)
+        return '无法获取歌曲列表，请稍后再试。'
       }
 
-      const qqData = qq?.data as SongData[] ?? []
-      const neteaseData = netease?.data as SongData[] ?? []
-      if (!qqData.length && !neteaseData.length) return '无法获取歌曲列表，请稍后再试。'
 
-      const qqListText = qqData.length ? formatSongList(qqData, 'QQ Music', 0) : '<b>QQ Music</b>: 无法获取歌曲列表'
-      const neteaseListText = neteaseData.length ? formatSongList(neteaseData, 'NetEase Music', qqData.length) : '<b>NetEase Music</b>: 无法获取歌曲列表'
+      if (!neteaseData.length) return '无法获取歌曲列表，请尝试更换关键词。'
 
-      const listText = `${qqListText}<br/><br/>${neteaseListText}`
+
+      const neteaseListText = neteaseData.length ? formatSongList(neteaseData, 'NetEase Music', 0) : '<b>NetEase Music</b>: 无法获取歌曲列表'
+
+      const listText = `${neteaseListText}`
       const exitCommands = cfg.exitCommand.split(/[,，]/).map(cmd => cmd.trim())
       const exitCommandTip = cfg.menuExitCommandTip ? `退出选择请发[${exitCommands}]中的任意内容<br/><br/>` : ''
 
       let quoteId = session.messageId
 
       if (cfg.imageMode) {
-        if (!ctx.puppeteer) throw new Error('发送图片歌单需启用 puppeteer 服务')
         const imageBuffer = await generateSongListImage(listText, cfg)
+        if (!imageBuffer) { // 检查 imageBuffer 是否为 null
+          return '生成图片歌单失败，请检查 puppeteer 服务是否正常。';
+        }
         const payload = [
           h.quote(quoteId),
           h.image(imageBuffer, 'image/png'),
@@ -282,69 +214,34 @@ export function apply(ctx: Context, cfg: Config) {
       }
 
       const serialNumber = +input
-      if (!Number.isInteger(serialNumber) || serialNumber < 1 || serialNumber > qqData.length + neteaseData.length) {
+      if (!Number.isInteger(serialNumber) || serialNumber < 1 || serialNumber > neteaseData.length) {
         return `${h.quote(quoteId)}序号输入错误，已退出歌曲选择。`
       }
 
-      const songData: SongData[] = []
-      if (qqData.length) {
-        songData.push(...qqData)
-      }
-      if (neteaseData.length) {
-        songData.push(...neteaseData)
-      }
 
-      let platform: Platform, songid: number
-      const selected = songData[serialNumber - 1]
-      if (selected.songurl.includes('.163.com/')) {
-        platform = 'NetEase Music'
-        songid = selected.id
-      } else if (selected.songurl.includes('.qq.com/')) {
-        platform = 'QQ Music'
-        songid = selected.songid
-      }
-      if (!platform) return `${h.quote(quoteId)}获取歌曲失败。`
+      const selected = neteaseData[serialNumber - 1]
 
-      const [tipMessageId] = await session.send(h.quote(quoteId) + cfg.generationTip)
 
-      const song = await searchXZG(platform, {
-        songid,
-        key: cfg.xingzhigeAPIkey
-      })
-      const { channelId } = session
-      if (song.code === 0) {
-        const { src, interval } = song.data as SongData
-        if (!src || src.startsWith('无法')) {
-          if (cfg.recall) session.bot.deleteMessage(channelId, tipMessageId)
-          ctx.logger.warn(src)
-          return `${h.quote(quoteId)}获取歌曲失败。`
+      const [tipMessageId] = await session.send(h.quote(quoteId) + `` + h.text(cfg.generationTip))
+
+      try {
+
+        const src = `https://api.injahow.cn/meting/?server=netease&id=${selected.id}&type=url`;
+        const interval = selected.duration / 1000; // selected 的 duration 
+
+        if (interval * 1000 > cfg.maxDuration) {
+          if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
+          return `${h.quote(quoteId)}歌曲持续时间超出限制。`
         }
-        try {
-          const duration = timeStringToSeconds(interval)
-          if (duration * 1000 > cfg.maxDuration) {
-            if (cfg.recall) session.bot.deleteMessage(channelId, tipMessageId)
-            return `${h.quote(quoteId)}歌曲持续时间超出限制。`
-          }
-          /*const url = new URL(src)
-          if (url.host.startsWith('ws.stream')) {
-            url.host = url.host.replace('ws.stream', 'isure6.stream')
-          }*/
-          await session.send(h.audio(src, { duration }))
-        } catch (err) {
-          if (cfg.recall) session.bot.deleteMessage(channelId, tipMessageId)
-          throw err
-        }
-        if (cfg.recall) session.bot.deleteMessage(channelId, tipMessageId)
-      } else {
-        if (cfg.recall) session.bot.deleteMessage(channelId, tipMessageId)
-        let msg = song.msg || ''
-        if (msg) {
-          if ([',', '.', '!', '，', '。', '！'].includes(msg.at(-1))) {
-            msg = msg.slice(0, -1)
-          }
-          msg += '，'
-        }
-        return `${h.quote(quoteId)}${msg}获取歌曲失败。`
+
+        await session.send(h.audio(src, { duration: interval }))
+
+
+        if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
+      } catch (err) {
+        if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
+        logger.error('获取歌曲详情或发送语音失败', err);
+        return `${h.quote(quoteId)}获取歌曲失败，请稍后再试。`
       }
     })
 }
