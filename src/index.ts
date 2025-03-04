@@ -9,25 +9,24 @@ export const inject = {
 
 export const usage = `
 <a target="_blank" href="https://github.com/idranme/koishi-plugin-music-voice?tab=readme-ov-file#%E4%BD%BF%E7%94%A8%E8%AF%A5%E6%8F%92%E4%BB%B6%E6%90%9C%E7%B4%A2%E5%B9%B6%E8%8E%B7%E5%8F%96%E6%AD%8C%E6%9B%B2">➤ 食用方法点此获取</a>
-
----
-
 本插件旨在 安装即可语音点歌。
 
-因各种不可抗力因素，目前使用 [龙珠API-网易云音乐](https://www.hhlqilongzhu.cn/) 作为后端服务。
+因各种不可抗力因素，目前仅支持使用网易云音乐。
 
 更多功能与后端选择，欢迎使用 [➣ music-link](/market?keyword=music-link)
-`;
+`
 
 export interface Config {
+
   generationTip: string
   waitTimeout: number
   exitCommand: string
   menuExitCommandTip: boolean
   recall: boolean
   imageMode: boolean
-  darkMode: boolean;
-  searchListCount: number;
+  darkMode: boolean
+  maxDuration: number
+  searchListCount: number
 }
 
 export const Config: Schema<Config> = Schema.intersect([
@@ -44,58 +43,144 @@ export const Config: Schema<Config> = Schema.intersect([
     exitCommand: Schema.string().description('退出选择指令，多个指令间请用逗号分隔开').default('0, 不听了'),
     menuExitCommandTip: Schema.boolean().description('是否在歌单内容的后面，加上退出选择指令的文字提示').default(false),
     recall: Schema.boolean().description('是否在发送语音后撤回 generationTip').default(true),
-    searchListCount: Schema.natural().description('搜索歌曲列表的数量').default(20),
+    maxDuration: Schema.natural().role('ms').min(Time.minute).step(Time.minute).description('歌曲最长持续时间，单位为毫秒')
+      .default(30 * Time.minute),
+    searchListCount: Schema.natural().description('搜索歌曲列表的数量').default(20) // 默认搜索列表数量为 20
   }).description('进阶设置')
 ])
 
 interface SongData {
-  song_name: string;
-  song_singer: string;
-  quality: string;
-  cover: string;
-  link: string;
-  music_url: string;
-  lyric?: string;
-  platform: 'NetEase Music';
-  index: number;
+  id: number;
+  name: string;
+  artists: string;
+  albumName: string;
+  duration: number;
+  lrc?: string;
 }
 
-function formatSongList(data: SongData[], startIndex: number) {
-  const netEaseMusicList = data.filter(song => song.platform === 'NetEase Music');
-
-  let formatted = '';
-
-  if (netEaseMusicList.length > 0) {
-    const netEaseFormatted = netEaseMusicList.map((song) => {
-      return `${song.index}. ${song.song_name} -- ${song.song_singer}`;
-    }).join('<br/>');
-    formatted += `<b>NetEase Music</b>:<br/>${netEaseFormatted}`;
-  }
-
-  return formatted;
+interface NetEaseSearchResponse {
+  result?: {
+    songs?: NetEaseSongItem[];
+  };
 }
 
+interface NetEaseSongItem {
+  id: number;
+  name: string;
+  artists: { name: string }[];
+  album: { name: string };
+  duration: number;
+
+}
+
+
+type Platform = 'NetEase Music'
+
+function formatSongList(data: SongData[], platform: Platform, startIndex: number) {
+  const formatted = data.map((song, index) => {
+    let item = `${index + startIndex + 1}. ${song.name} -- ${song.artists} -- ${song.albumName}`
+    return item
+  }).join('<br/>')
+  return `<b>${platform}</b>:<br/>${formatted}`
+}
 
 export function apply(ctx: Context, cfg: Config) {
   const logger = ctx.logger('music-voice')
-  ctx.command('music <keyword:text>', '搜索歌曲并播放')
+  async function searchNetEase(keyword: string, limit: number = 10): Promise<SongData[]> {
+    const searchApiUrl = `https://music.163.com/api/search/get/web?csrf_token=hlpretag=&hlposttag=&s=${encodeURIComponent(keyword)}&type=1&offset=0&total=true&limit=${limit}`;
+    try {
+      const searchApiResponse = await ctx.http.get(searchApiUrl);
+      const parsedSearchApiResponse: NetEaseSearchResponse = JSON.parse(searchApiResponse);
+      const searchData = parsedSearchApiResponse.result;
+
+      if (!searchData || !searchData.songs || searchData.songs.length === 0) {
+        return [];
+      }
+
+      const songList: SongData[] = searchData.songs.map((song) => {
+        return {
+          id: song.id,
+          name: song.name,
+          artists: song.artists.map(artist => artist.name).join('/'),
+          albumName: song.album.name,
+          duration: song.duration // Get duration 
+        };
+      });
+      return songList;
+    } catch (error) {
+      logger.error('网易云音乐搜索出错', error);
+      return [];
+    }
+  }
+
+  async function generateSongListImage(listText: string, cfg: Config) {
+    if (!ctx.puppeteer) {
+      logger.warn('puppeteer 服务未启用，无法生成图片歌单。');
+      return null;
+    }
+    const textChannel = cfg.darkMode ? 255 : 0
+    const backgroundChannel = cfg.darkMode ? 0 : 255
+    const content = `
+      <!DOCTYPE html>
+      <html lang="zh">
+        <head>
+          <title>music</title>
+          <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <style>
+            body {
+              margin: 0;
+              font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei", SimSun, sans-serif;
+              font-size: 16px;
+              background: rgb(${backgroundChannel} ${backgroundChannel} ${backgroundChannel});
+              color: rgb(${textChannel} ${textChannel} ${textChannel});
+              min-height: 100vh;
+            }
+            #song-list {
+              padding: 20px;
+              display: inline-block; /* 使div适应内容宽度 */
+              max-width: 100%; /* 防止内容溢出 */
+              white-space: nowrap; /* 防止歌曲名称换行 */
+              transform: scale(0.9);
+            }
+            s {
+              text-decoration-thickness: 1.5px;
+            }
+          </style>
+        </head>
+        <body>
+          <div id="song-list">${listText}</div>
+        </body>
+      </html>
+    `
+    const page = await ctx.puppeteer.page()
+    await page.setContent(content)
+    const list = await page.$('#song-list')
+    if (!list) return null; // 避免 list 为 null 导致报错
+    const screenshot = await list.screenshot({})
+    page.close()
+    return screenshot
+  }
+
+  ctx.command('music <keyword:text>', '搜索歌曲并播放网易云音乐')
     .alias('mdff', '点歌')
     .action(async ({ session }, keyword) => {
       if (!keyword) return '请输入歌曲相关信息。'
 
-      let songData: SongData[] = [];
+      let neteaseData: SongData[] = [];
       try {
-        songData = await searchMusic(keyword, cfg.searchListCount)
+        neteaseData = await searchNetEase(keyword, cfg.searchListCount)
+
       } catch (err) {
-        logger.warn('获取歌曲数据时发生错误', err.message)
+        logger.warn('获取网易云音乐数据时发生错误', err.message)
         return '无法获取歌曲列表，请稍后再试。'
       }
 
+      if (!neteaseData.length) return '无法获取歌曲列表，请尝试更换关键词。'
 
-      if (!songData.length) return '无法获取歌曲列表，请尝试更换关键词。'
+      const neteaseListText = neteaseData.length ? formatSongList(neteaseData, 'NetEase Music', 0) : '<b>NetEase Music</b>: 无法获取歌曲列表'
 
-
-      const listText = formatSongList(songData, 0)
+      const listText = `${neteaseListText}`
       const exitCommands = cfg.exitCommand.split(/[,，]/).map(cmd => cmd.trim())
       const exitCommandTip = cfg.menuExitCommandTip ? `退出选择请发[${exitCommands}]中的任意内容<br/><br/>` : ''
 
@@ -133,30 +218,26 @@ export function apply(ctx: Context, cfg: Config) {
       }
 
       const serialNumber = +input
-      if (!Number.isInteger(serialNumber) || serialNumber < 1 || serialNumber > songData.length) {
+      if (!Number.isInteger(serialNumber) || serialNumber < 1 || serialNumber > neteaseData.length) {
         return `${h.quote(quoteId)}序号输入错误，已退出歌曲选择。`
       }
 
-
-      const selected = songData[serialNumber - 1]
-
+      const selected = neteaseData[serialNumber - 1]
 
       const [tipMessageId] = await session.send(h.quote(quoteId) + `` + h.text(cfg.generationTip))
 
       try {
-        let music_url = selected.music_url;
-        // 再次请求API获取歌曲真实URL - 网易云音乐平台
-        if (selected.platform === 'NetEase Music') {
-          const wyDetailsUrl = `https://www.hhlqilongzhu.cn/api/dg_wyymusic.php?gm=${encodeURIComponent(keyword)}&type=json&num=${cfg.searchListCount}&n=${selected.index}`; // 序号直接使用 index
-          const wyDetailResponse = await ctx.http.get(wyDetailsUrl);
-          if (wyDetailResponse && wyDetailResponse.music_url) {
-            music_url = wyDetailResponse.music_url;
-          } else {
-            logger.warn('获取网易云音乐失败', wyDetailResponse);
-            return;
-          }
+
+        const src: string = await ctx.http.get(`https://www.byfuns.top/api/1/?id=${selected.id}`);
+        const interval = selected.duration / 1000; // selected 的 duration 
+
+        if (interval * 1000 > cfg.maxDuration) {
+          if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
+          return `${h.quote(quoteId)}歌曲持续时间超出限制。`
         }
-        await session.send(h.audio(music_url))
+
+        await session.send(h.audio(src))
+
         if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
       } catch (err) {
         if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
@@ -164,87 +245,4 @@ export function apply(ctx: Context, cfg: Config) {
         return `${h.quote(quoteId)}获取歌曲失败，请稍后再试。`
       }
     })
-
-  async function searchMusic(keyword: string, limit: number): Promise<SongData[]> {
-    let wySongs: SongData[] = [];
-
-    try {
-      const wyUrl = `https://www.hhlqilongzhu.cn/api/dg_wyymusic.php?gm=${encodeURIComponent(keyword)}&type=json&num=${limit}`;
-      const wyData = await ctx.http.get(wyUrl);
-
-      if (wyData && wyData.code === 200 && wyData.data) {
-        wySongs = (wyData.data as any[]).map((item, index) => ({
-          song_name: item.title || '未知歌名',
-          song_singer: item.singer || '未知歌手',
-          quality: item.id,
-          cover: item.cover,
-          link: item.link,
-          music_url: item.music_url,
-          lyric: item.lrc,
-          platform: 'NetEase Music',
-          index: index + 1,
-        })) as SongData[];
-      } else {
-        logger.warn('搜索网易云音乐失败', wyData);
-      }
-    } catch (error) {
-      logger.error('搜索网易云音乐失败', error);
-    }
-
-    let currentIndex = 1;
-    wySongs.forEach(song => {
-      song.index = currentIndex++;
-    });
-
-    return [...wySongs];
-  }
-
-  async function generateSongListImage(listText: string, cfg: Config) {
-    if (!ctx.puppeteer) {
-      logger.warn('puppeteer 服务未启用，无法生成图片歌单。');
-      return null;
-    }
-    const textChannel = cfg.darkMode ? 255 : 0
-    const backgroundChannel = cfg.darkMode ? 0 : 255
-    const content = `
-        <!DOCTYPE html>
-        <html lang="zh">
-          <head>
-            <title>music</title>
-            <meta charset="UTF-8" />
-            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-            <style>
-              body {
-                margin: 0;
-                font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei", SimSun, sans-serif;
-                font-size: 16px;
-                background: rgb(${backgroundChannel} ${backgroundChannel} ${backgroundChannel});
-                color: rgb(${textChannel} ${textChannel} ${textChannel});
-                min-height: 100vh;
-              }
-              #song-list {
-                padding: 20px;
-                display: inline-block; /* 使div适应内容宽度 */
-                max-width: 100%; /* 防止内容溢出 */
-                white-space: nowrap; /* 防止歌曲名称换行 */
-                transform: scale(0.9);
-              }
-              s {
-                text-decoration-thickness: 1.5px;
-              }
-            </style>
-          </head>
-          <body>
-            <div id="song-list">${listText}</div>
-          </body>
-        </html>
-      `
-    const page = await ctx.puppeteer.page()
-    await page.setContent(content)
-    const list = await page.$('#song-list')
-    if (!list) return null; // 避免 list 为 null 导致报错
-    const screenshot = await list.screenshot({})
-    page.close()
-    return screenshot
-  }
 }
