@@ -227,8 +227,8 @@ export function apply(ctx: Context, cfg: Config) {
       const [tipMessageId] = await session.send(h.quote(quoteId) + `` + h.text(cfg.generationTip))
 
       try {
-
-        const src: string = await ctx.http.get(`https://www.byfuns.top/api/1/?id=${selected.id}`);
+        //  const src: string = await ctx.http.get(`https://www.byfuns.top/api/1/?id=${selected.id}`);
+        const src: string = `https://api.qijieya.cn/meting/?id=${selected.id}&type=url`;
         const interval = selected.duration / 1000; // selected 的 duration 
 
         if (interval * 1000 > cfg.maxDuration) {
