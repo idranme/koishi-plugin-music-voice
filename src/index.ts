@@ -136,11 +136,10 @@ export function apply(ctx: Context, config) {
       }
     });
 
-
-
     ctx.command(`${config.commandName || "music"} <keyword:text>`)
       .alias(config.commandAlias || "mdff")
-      .action(async ({ session }, keyword) => {
+      .option('number', '-n <number:number> 歌曲序号')
+      .action(async ({ session, options }, keyword) => {
         if (!keyword) return session.text(".nokeyword")
 
         let neteaseData: SongData[] = [];
@@ -159,43 +158,55 @@ export function apply(ctx: Context, config) {
         const listText = `${neteaseListText}`
         const exitCommands = config.exitCommandList;
         const exitCommandTip = config.menuExitCommandTip ? session.text(".exitCommandTip", [exitCommands.join(', ')]) : ''
-        let quoteId = session.messageId
+        let selected: SongData;
+        let quoteId = session.messageId;
 
-        if (config.imageMode) {
-          const imageBuffer = await generateSongListImage(listText, config)
-          if (!imageBuffer) { // 检查 imageBuffer 是否为 null
-            return session.text(".imageGenerationFailed");
+        if (options.number !== undefined) { // 如果用户提供了 -n 选项
+          const serialNumber = options.number;
+          if (!Number.isInteger(serialNumber) || serialNumber < 1 || serialNumber > neteaseData.length) {
+            // 如果序号无效，返回错误提示
+            return `${h.quote(quoteId)}` + session.text(".invalidNumber");
           }
-          const payload = [
-            h.quote(quoteId),
-            h.image(imageBuffer, 'image/png'),
-            h.text(session.text(".imageListPrompt", [exitCommandTip.replaceAll('<br/>', '\n'), config.waitForTimeout]))
-          ]
-          const msg = await session.send(payload)
-          quoteId = msg.at(-1)
+          selected = neteaseData[serialNumber - 1]; // 直接根据序号选择歌曲
+
         } else {
-          const payload = `${h.quote(quoteId)}` + session.text(".textListPrompt", [listText, exitCommandTip, config.waitForTimeout])
-          const msg = await session.send(h.unescape(payload))
-          quoteId = msg.at(-1)
+
+          if (config.imageMode) {
+            const imageBuffer = await generateSongListImage(listText, config)
+            if (!imageBuffer) { // 检查 imageBuffer 是否为 null
+              return session.text(".imageGenerationFailed");
+            }
+            const payload = [
+              h.quote(quoteId),
+              h.image(imageBuffer, 'image/png'),
+              h.text(session.text(".imageListPrompt", [exitCommandTip.replaceAll('<br/>', '\n'), config.waitForTimeout]))
+            ]
+            const msg = await session.send(payload)
+            quoteId = msg.at(-1)
+          } else {
+            const payload = `${h.quote(quoteId)}` + session.text(".textListPrompt", [listText, exitCommandTip, config.waitForTimeout])
+            const msg = await session.send(h.unescape(payload))
+            quoteId = msg.at(-1)
+          }
+
+          const input = await session.prompt((session) => {
+            quoteId = session.messageId
+            return h.select(session.elements, 'text').join('')
+          }, { timeout: config.waitForTimeout * 1000 })
+
+          if (isNullable(input)) return `${quoteId ? h.quote(quoteId) : ''}` + session.text(".promptTimeout")
+
+          if (exitCommands.includes(input)) {
+            return `${h.quote(quoteId)}` + session.text(".exitPrompt")
+          }
+
+          const serialNumber = +input
+          if (!Number.isInteger(serialNumber) || serialNumber < 1 || serialNumber > neteaseData.length) {
+            return `${h.quote(quoteId)}` + session.text(".invalidNumber")
+          }
+
+          selected = neteaseData[serialNumber - 1]
         }
-
-        const input = await session.prompt((session) => {
-          quoteId = session.messageId
-          return h.select(session.elements, 'text').join('')
-        }, { timeout: config.waitForTimeout * 1000 })
-
-        if (isNullable(input)) return `${quoteId ? h.quote(quoteId) : ''}` + session.text(".promptTimeout")
-
-        if (exitCommands.includes(input)) {
-          return `${h.quote(quoteId)}` + session.text(".exitPrompt")
-        }
-
-        const serialNumber = +input
-        if (!Number.isInteger(serialNumber) || serialNumber < 1 || serialNumber > neteaseData.length) {
-          return `${h.quote(quoteId)}` + session.text(".invalidNumber")
-        }
-
-        const selected = neteaseData[serialNumber - 1]
 
         const [tipMessageId] = await session.send(h.quote(quoteId) + `` + h.text(config.generationTip))
 
