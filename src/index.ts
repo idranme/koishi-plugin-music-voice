@@ -1,52 +1,88 @@
-import { Context, Schema, h, isNullable, Time } from 'koishi'
-import type { } from 'koishi-plugin-puppeteer'
+import { Context, Schema, h, isNullable } from 'koishi'
+import { } from 'koishi-plugin-puppeteer'
 
 export const name = 'music-voice'
 export const inject = {
-  required: ['http'],
+  required: ["logger", "http", "i18n"],
   optional: ['puppeteer']
 }
 
 export const usage = `
+
+---
+
 <a target="_blank" href="https://github.com/idranme/koishi-plugin-music-voice?tab=readme-ov-file#%E4%BD%BF%E7%94%A8%E8%AF%A5%E6%8F%92%E4%BB%B6%E6%90%9C%E7%B4%A2%E5%B9%B6%E8%8E%B7%E5%8F%96%E6%AD%8C%E6%9B%B2">➤ 食用方法点此获取</a>
-本插件旨在 安装即可语音点歌。
+
+本插件旨在 安装后即可语音点歌。
 
 因各种不可抗力因素，目前仅支持使用网易云音乐。
 
-更多功能与后端选择，欢迎使用 [➣ music-link](/market?keyword=music-link)
+
+
+---
+
+## 开启插件前，请确保以下服务已经启用！
+
+### 所需服务：
+
+- [puppeteer服务](/market?keyword=puppeteer) （可选安装）
+
+- [http服务](/market?keyword=http+email:shigma10826@gmail.com) （已默认开启）
+
+- [logger服务](/market?keyword=logger+email:shigma10826@gmail.com) （已默认开启）
+
+- i18n服务 （已默认开启）
+
+此外可能还需要这些服务才能发送语音：
+
+
+- [ffmpeg服务](/market?keyword=ffmpeg)  （可选安装）
+
+- [silk服务](/market?keyword=silk)  （可选安装）
+
+
+---
 `
 
-export interface Config {
-
-  generationTip: string
-  waitTimeout: number
-  exitCommand: string
-  menuExitCommandTip: boolean
-  recall: boolean
-  imageMode: boolean
-  darkMode: boolean
-  maxDuration: number
-  searchListCount: number
-}
-
-export const Config: Schema<Config> = Schema.intersect([
+export const Config = Schema.intersect([
   Schema.object({
+    commandName: Schema.string().description('使用的指令名称').default('music'),
+    commandAlias: Schema.string().description('使用的指令别名').default('mdff'),
     generationTip: Schema.string().description('生成语音时返回的文字提示内容').default('生成语音中…'),
-    waitTimeout: Schema.natural().role('ms').min(Time.second).step(Time.second).description('等待用户选择歌曲序号的最长时间')
-      .default(45 * Time.second)
+    waitForTimeout: Schema.natural().min(1).step(1).description('等待用户选择歌曲序号的最长时间 （秒）').default(45),
   }).description('基础设置'),
+
   Schema.object({
-    imageMode: Schema.boolean().description('开启后返回图片歌单，关闭后返回文本歌单').required(),
-    darkMode: Schema.boolean().description('是否开启图片歌单暗黑模式').default(true)
-  }).description('歌单设置'),
+    imageMode: Schema.boolean().description('开启后 返回图片歌单（需要puppeteer服务），<br>关闭后 返回文本歌单').default(false),
+  }).description('歌单渲染设置'),
+  Schema.union([
+    Schema.object({
+      imageMode: Schema.const(true).required(),
+      textChannel: Schema.string().description('图片歌单的文字颜色').role('color').default("rgba(255, 255, 255, 1)"),
+      backgroundChannel: Schema.string().description('图片歌单的背景颜色').role('color').default("rgba(0, 0, 0, 1)"), // "rgba(42, 45, 62, 1)"
+    }),
+    Schema.object({}),
+  ]),
+
   Schema.object({
-    exitCommand: Schema.string().description('退出选择指令，多个指令间请用逗号分隔开').default('0, 不听了'),
-    menuExitCommandTip: Schema.boolean().description('是否在歌单内容的后面，加上退出选择指令的文字提示').default(false),
-    recall: Schema.boolean().description('是否在发送语音后撤回 generationTip').default(true),
-    maxDuration: Schema.natural().role('ms').min(Time.minute).step(Time.minute).description('歌曲最长持续时间，单位为毫秒')
-      .default(30 * Time.minute),
-    searchListCount: Schema.natural().description('搜索歌曲列表的数量').default(20) // 默认搜索列表数量为 20
-  }).description('进阶设置')
+    searchListCount: Schema.natural().description('搜索歌曲列表的数量').default(20),
+    exitCommandList: Schema.array(String).role('table').description('退出选择指令。一行一个指令').default(["0", "不听了"]),
+    menuExitCommandTip: Schema.boolean().description('是否在歌单内容的后面，加上`退出选择指令`的文字提示').default(false),
+    recall: Schema.boolean().description('是否在发送语音后撤回 `generationTip`').default(true),
+    maxSongDuration: Schema.natural().min(1).step(1).description('歌曲最长持续时间（分钟）').default(30),
+  }).description('进阶设置'),
+
+  Schema.object({
+    metingAPI: Schema.union([
+      Schema.const('meting.jmstrand.cn').description('（推荐）`meting.jmstrand.cn`').experimental(),
+      Schema.const('api.qijieya.cn').description('（推荐）`api.qijieya.cn`').experimental(),
+    ]).description("获取音乐直链的后端API").default("api.qijieya.cn"),
+    srcToWhat: Schema.union([
+      Schema.const('src').description('使用网络URL发送（直接发送）'),
+      Schema.const('buffer').description('使用buffer发送（下载后发送）'),
+      Schema.const('text').description('使用文本发送（返回直链）（h.text）'),
+    ]).role('radio').default("src").description('歌曲信息的的返回格式'),
+  }).description('调试设置'),
 ])
 
 interface SongData {
@@ -70,57 +106,163 @@ interface NetEaseSongItem {
   artists: { name: string }[];
   album: { name: string };
   duration: number;
-
 }
 
+export function apply(ctx: Context, config) {
+  ctx.on('ready', async () => {
 
-type Platform = 'NetEase Music'
+    const logger = ctx.logger('music-voice')
 
-function formatSongList(data: SongData[], platform: Platform, startIndex: number) {
-  const formatted = data.map((song, index) => {
-    let item = `${index + startIndex + 1}. ${song.name} -- ${song.artists} -- ${song.albumName}`
-    return item
-  }).join('<br/>')
-  return `<b>${platform}</b>:<br/>${formatted}`
-}
+    ctx.i18n.define("zh-CN", {
+      commands: {
+        [config.commandName]: {
+          description: `搜索歌曲并播放网易云音乐`,
+          messages: {
+            "nokeyword": `请输入歌曲相关信息。\n➣示例：/${config.commandName} 蔚蓝档案`,
+            "songlisterror": "无法获取歌曲列表，请稍后再试。",
+            "invalidKeyword": "无法获取歌曲列表，请尝试更换关键词。",
+            "exitCommandTip": "退出选择请发 [{0}] 中的任意内容<br/><br/>",
+            "imageGenerationFailed": "生成图片歌单失败，请检查 puppeteer 服务是否正常。",
+            "imageListPrompt": "{0}请在 {1} 秒内，\n输入歌曲对应的序号",
+            "textListPrompt": "{0}<br/><br/>{1}请在 {2} 秒内，<br/>输入歌曲对应的序号",
+            "promptTimeout": "输入超时，已取消点歌。",
+            "exitPrompt": "已退出歌曲选择。",
+            "invalidNumber": "序号输入错误，已退出歌曲选择。",
+            "generationTip": "生成语音中…",
+            "durationExceeded": "歌曲持续时间超出限制。",
+            "getSongFailed": "获取歌曲失败，请稍后再试。",
+          }
+        },
+      }
+    });
 
-export function apply(ctx: Context, cfg: Config) {
-  const logger = ctx.logger('music-voice')
-  async function searchNetEase(keyword: string, limit: number = 10): Promise<SongData[]> {
-    const searchApiUrl = `https://music.163.com/api/search/get/web?csrf_token=hlpretag=&hlposttag=&s=${encodeURIComponent(keyword)}&type=1&offset=0&total=true&limit=${limit}`;
-    try {
-      const searchApiResponse = await ctx.http.get(searchApiUrl);
-      const parsedSearchApiResponse: NetEaseSearchResponse = JSON.parse(searchApiResponse);
-      const searchData = parsedSearchApiResponse.result;
 
-      if (!searchData || !searchData.songs || searchData.songs.length === 0) {
+
+    ctx.command(`${config.commandName || "music"} <keyword:text>`)
+      .alias(config.commandAlias || "mdff")
+      .action(async ({ session }, keyword) => {
+        if (!keyword) return session.text(".nokeyword")
+
+        let neteaseData: SongData[] = [];
+        try {
+          neteaseData = await searchNetEase(keyword, config.searchListCount)
+
+        } catch (err) {
+          logger.warn('获取网易云音乐数据时发生错误', err.message)
+          return session.text(".songlisterror")
+        }
+
+        if (!neteaseData.length) return session.text(".invalidKeyword")
+
+        const neteaseListText = neteaseData.length ? formatSongList(neteaseData, 'NetEase Music', 0) : '<b>NetEase Music</b>: 无法获取歌曲列表'
+
+        const listText = `${neteaseListText}`
+        const exitCommands = config.exitCommandList;
+        const exitCommandTip = config.menuExitCommandTip ? session.text(".exitCommandTip", [exitCommands.join(', ')]) : ''
+        let quoteId = session.messageId
+
+        if (config.imageMode) {
+          const imageBuffer = await generateSongListImage(listText, config)
+          if (!imageBuffer) { // 检查 imageBuffer 是否为 null
+            return session.text(".imageGenerationFailed");
+          }
+          const payload = [
+            h.quote(quoteId),
+            h.image(imageBuffer, 'image/png'),
+            h.text(session.text(".imageListPrompt", [exitCommandTip.replaceAll('<br/>', '\n'), config.waitForTimeout]))
+          ]
+          const msg = await session.send(payload)
+          quoteId = msg.at(-1)
+        } else {
+          const payload = `${h.quote(quoteId)}` + session.text(".textListPrompt", [listText, exitCommandTip, config.waitForTimeout])
+          const msg = await session.send(h.unescape(payload))
+          quoteId = msg.at(-1)
+        }
+
+        const input = await session.prompt((session) => {
+          quoteId = session.messageId
+          return h.select(session.elements, 'text').join('')
+        }, { timeout: config.waitForTimeout * 1000 })
+
+        if (isNullable(input)) return `${quoteId ? h.quote(quoteId) : ''}` + session.text(".promptTimeout")
+
+        if (exitCommands.includes(input)) {
+          return `${h.quote(quoteId)}` + session.text(".exitPrompt")
+        }
+
+        const serialNumber = +input
+        if (!Number.isInteger(serialNumber) || serialNumber < 1 || serialNumber > neteaseData.length) {
+          return `${h.quote(quoteId)}` + session.text(".invalidNumber")
+        }
+
+        const selected = neteaseData[serialNumber - 1]
+
+        const [tipMessageId] = await session.send(h.quote(quoteId) + `` + h.text(config.generationTip))
+
+        try {
+          let src: string = '';
+          if (config.metingAPI === 'meting.jmstrand.cn') {
+            src = `https://meting.jmstrand.cn/?type=url&id=${selected.id}`;
+          } else if (config.metingAPI === 'api.qijieya.cn') {
+            src = `https://api.qijieya.cn/meting/?type=url&id=${selected.id}`;
+          }
+          const interval = selected.duration / 1000;
+
+          if (interval * 1000 > config.maxSongDuration * 1000 * 60) {
+            if (config.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
+            return `${h.quote(quoteId)}` + session.text(".durationExceeded")
+          }
+          if (config.srcToWhat === "src") {
+            await session.send(h.audio(src))
+          } else if (config.srcToWhat === "buffer") {
+            const srcFile = (await ctx.http.file(src)).data
+            const srcBuffer = Buffer.from(srcFile)
+            await session.send(h.audio(srcBuffer, 'audio/mpeg'))
+          } else if (config.srcToWhat === "text") {
+            await session.send(h.text(src))
+          }
+
+          if (config.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
+        } catch (error) {
+          if (config.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
+          logger.error('获取歌曲详情或发送语音失败', error);
+          return `${h.quote(quoteId)}` + session.text(".getSongFailed")
+        }
+      })
+
+    async function searchNetEase(keyword: string, limit: number = 10): Promise<SongData[]> {
+      const searchApiUrl = `https://music.163.com/api/search/get/web?csrf_token=hlpretag=&hlposttag=&s=${encodeURIComponent(keyword)}&type=1&offset=0&total=true&limit=${limit}`;
+      try {
+        const searchApiResponse = await ctx.http.get(searchApiUrl);
+        const parsedSearchApiResponse: NetEaseSearchResponse = JSON.parse(searchApiResponse);
+        const searchData = parsedSearchApiResponse.result;
+
+        if (!searchData || !searchData.songs || searchData.songs.length === 0) {
+          return [];
+        }
+
+        const songList: SongData[] = searchData.songs.map((song) => {
+          return {
+            id: song.id,
+            name: song.name,
+            artists: song.artists.map(artist => artist.name).join('/'),
+            albumName: song.album.name,
+            duration: song.duration
+          };
+        });
+        return songList;
+      } catch (error) {
+        logger.error('网易云音乐搜索出错', error);
         return [];
       }
-
-      const songList: SongData[] = searchData.songs.map((song) => {
-        return {
-          id: song.id,
-          name: song.name,
-          artists: song.artists.map(artist => artist.name).join('/'),
-          albumName: song.album.name,
-          duration: song.duration // Get duration 
-        };
-      });
-      return songList;
-    } catch (error) {
-      logger.error('网易云音乐搜索出错', error);
-      return [];
     }
-  }
 
-  async function generateSongListImage(listText: string, cfg: Config) {
-    if (!ctx.puppeteer) {
-      logger.warn('puppeteer 服务未启用，无法生成图片歌单。');
-      return null;
-    }
-    const textChannel = cfg.darkMode ? 255 : 0
-    const backgroundChannel = cfg.darkMode ? 0 : 255
-    const content = `
+    async function generateSongListImage(listText: string, config) {
+      if (!ctx.puppeteer) {
+        logger.warn('puppeteer 服务未启用，无法生成图片歌单。');
+        return null;
+      }
+      const content = `
       <!DOCTYPE html>
       <html lang="zh">
         <head>
@@ -132,15 +274,15 @@ export function apply(ctx: Context, cfg: Config) {
               margin: 0;
               font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei", SimSun, sans-serif;
               font-size: 16px;
-              background: rgb(${backgroundChannel} ${backgroundChannel} ${backgroundChannel});
-              color: rgb(${textChannel} ${textChannel} ${textChannel});
+              background: ${config.backgroundChannel};
+              color: ${config.textChannel};
               min-height: 100vh;
             }
             #song-list {
               padding: 20px;
-              display: inline-block; /* 使div适应内容宽度 */
-              max-width: 100%; /* 防止内容溢出 */
-              white-space: nowrap; /* 防止歌曲名称换行 */
+              display: inline-block; 
+              max-width: 100%; 
+              white-space: nowrap; 
               transform: scale(0.9);
             }
             s {
@@ -153,96 +295,22 @@ export function apply(ctx: Context, cfg: Config) {
         </body>
       </html>
     `
-    const page = await ctx.puppeteer.page()
-    await page.setContent(content)
-    const list = await page.$('#song-list')
-    if (!list) return null; // 避免 list 为 null 导致报错
-    const screenshot = await list.screenshot({})
-    page.close()
-    return screenshot
-  }
+      const page = await ctx.puppeteer.page()
+      await page.setContent(content)
+      const list = await page.$('#song-list')
+      if (!list) return null; // 避免 list 为 null 导致报错
+      const screenshot = await list.screenshot({})
+      page.close()
+      return screenshot
+    }
 
-  ctx.command('music <keyword:text>', '搜索歌曲并播放网易云音乐')
-    .alias('mdff', '点歌')
-    .action(async ({ session }, keyword) => {
-      if (!keyword) return '请输入歌曲相关信息。'
+    function formatSongList(data: SongData[], platform: string, startIndex: number) {
+      const formatted = data.map((song, index) => {
+        let item = `${index + startIndex + 1}. ${song.name} -- ${song.artists} -- ${song.albumName}`
+        return item
+      }).join('<br/>')
+      return `<b>${platform}</b>:<br/>${formatted}`
+    }
 
-      let neteaseData: SongData[] = [];
-      try {
-        neteaseData = await searchNetEase(keyword, cfg.searchListCount)
-
-      } catch (err) {
-        logger.warn('获取网易云音乐数据时发生错误', err.message)
-        return '无法获取歌曲列表，请稍后再试。'
-      }
-
-      if (!neteaseData.length) return '无法获取歌曲列表，请尝试更换关键词。'
-
-      const neteaseListText = neteaseData.length ? formatSongList(neteaseData, 'NetEase Music', 0) : '<b>NetEase Music</b>: 无法获取歌曲列表'
-
-      const listText = `${neteaseListText}`
-      const exitCommands = cfg.exitCommand.split(/[,，]/).map(cmd => cmd.trim())
-      const exitCommandTip = cfg.menuExitCommandTip ? `退出选择请发[${exitCommands}]中的任意内容<br/><br/>` : ''
-
-      let quoteId = session.messageId
-
-      if (cfg.imageMode) {
-        const imageBuffer = await generateSongListImage(listText, cfg)
-        if (!imageBuffer) { // 检查 imageBuffer 是否为 null
-          return '生成图片歌单失败，请检查 puppeteer 服务是否正常。';
-        }
-        const payload = [
-          h.quote(quoteId),
-          h.image(imageBuffer, 'image/png'),
-          h.text(`${exitCommandTip.replaceAll('<br/>', '\n')}请在 `),
-          h('i18n:time', { value: cfg.waitTimeout }),
-          h.text('内，\n'),
-          h.text('输入歌曲对应的序号')
-        ]
-        const msg = await session.send(payload)
-        quoteId = msg.at(-1)
-      } else {
-        const payload = `${h.quote(quoteId)}${listText}<br/><br/>${exitCommandTip}请在 <i18n:time value="${cfg.waitTimeout}"/>内，<br/>输入歌曲对应的序号`
-        const msg = await session.send(payload)
-        quoteId = msg.at(-1)
-      }
-
-      const input = await session.prompt((session) => {
-        quoteId = session.messageId
-        return h.select(session.elements, 'text').join('')
-      }, { timeout: cfg.waitTimeout })
-
-      if (isNullable(input)) return `${quoteId ? h.quote(quoteId) : ''}输入超时，已取消点歌。`
-      if (exitCommands.includes(input)) {
-        return `${h.quote(quoteId)}已退出歌曲选择。`
-      }
-
-      const serialNumber = +input
-      if (!Number.isInteger(serialNumber) || serialNumber < 1 || serialNumber > neteaseData.length) {
-        return `${h.quote(quoteId)}序号输入错误，已退出歌曲选择。`
-      }
-
-      const selected = neteaseData[serialNumber - 1]
-
-      const [tipMessageId] = await session.send(h.quote(quoteId) + `` + h.text(cfg.generationTip))
-
-      try {
-        //  const src: string = await ctx.http.get(`https://www.byfuns.top/api/1/?id=${selected.id}`);
-        const src: string = `https://api.qijieya.cn/meting/?id=${selected.id}&type=url`;
-        const interval = selected.duration / 1000; // selected 的 duration 
-
-        if (interval * 1000 > cfg.maxDuration) {
-          if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
-          return `${h.quote(quoteId)}歌曲持续时间超出限制。`
-        }
-
-        await session.send(h.audio(src))
-
-        if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
-      } catch (err) {
-        if (cfg.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
-        logger.error('获取歌曲详情或发送语音失败', err);
-        return `${h.quote(quoteId)}获取歌曲失败，请稍后再试。`
-      }
-    })
+  })
 }
