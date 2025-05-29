@@ -1,6 +1,12 @@
 import { Context, Schema, h, isNullable } from 'koishi'
 import { } from 'koishi-plugin-puppeteer'
 
+import os from 'node:os';
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+import path from 'node:path';
+import url from 'node:url';
+
 export const name = 'music-voice'
 export const inject = {
   required: ["logger", "http", "i18n"],
@@ -53,7 +59,7 @@ export const Config = Schema.intersect([
   }).description('基础设置'),
 
   Schema.object({
-    imageMode: Schema.boolean().description('开启后 返回图片歌单（需要puppeteer服务），<br>关闭后 返回文本歌单').default(false),
+    imageMode: Schema.boolean().description('开启后 返回图片歌单（需要puppeteer服务）<br>关闭后 返回文本歌单').default(false),
   }).description('歌单渲染设置'),
   Schema.union([
     Schema.object({
@@ -66,7 +72,7 @@ export const Config = Schema.intersect([
 
   Schema.object({
     searchListCount: Schema.natural().description('搜索歌曲列表的数量').default(20),
-    exitCommandList: Schema.array(String).role('table').description('退出选择指令。一行一个指令').default(["0", "不听了"]),
+    exitCommandList: Schema.array(String).role('table').description('退出选择指令。<br>一行一个指令').default(["0", "不听了"]),
     menuExitCommandTip: Schema.boolean().description('是否在歌单内容的后面，加上`退出选择指令`的文字提示').default(false),
     recall: Schema.boolean().description('是否在发送语音后撤回 `generationTip`').default(true),
     maxSongDuration: Schema.natural().min(1).step(1).description('歌曲最长持续时间（分钟）').default(30),
@@ -78,11 +84,17 @@ export const Config = Schema.intersect([
       Schema.const('api.qijieya.cn').description('（推荐）`api.qijieya.cn`').experimental(),
     ]).description("获取音乐直链的后端API").default("api.qijieya.cn"),
     srcToWhat: Schema.union([
-      Schema.const('src').description('使用网络URL发送（直接发送）'),
-      Schema.const('buffer').description('使用buffer发送（下载后发送）'),
-      Schema.const('text').description('使用文本发送（返回直链）（h.text）'),
-    ]).role('radio').default("src").description('歌曲信息的的返回格式'),
+      Schema.const('text').description('文本 h.text'),
+      Schema.const('audio').description('语音 h.audio'),
+      Schema.const('audiobuffer').description('语音（buffer） h.audio'),
+      Schema.const('video').description('视频 h.video'),
+      Schema.const('file').description('文件 h.file'),
+    ]).role('radio').default("audio").description('歌曲信息的的返回格式'),
   }).description('调试设置'),
+
+  Schema.object({
+    loggerinfo: Schema.boolean().default(false).description("日志调试模式"),
+  }).description('开发者选项'),
 ])
 
 interface SongData {
@@ -128,7 +140,6 @@ export function apply(ctx: Context, config) {
             "promptTimeout": "输入超时，已取消点歌。",
             "exitPrompt": "已退出歌曲选择。",
             "invalidNumber": "序号输入错误，已退出歌曲选择。",
-            "generationTip": "生成语音中…",
             "durationExceeded": "歌曲持续时间超出限制。",
             "getSongFailed": "获取歌曲失败，请稍后再试。",
           }
@@ -141,7 +152,7 @@ export function apply(ctx: Context, config) {
       .option('number', '-n <number:number> 歌曲序号')
       .action(async ({ session, options }, keyword) => {
         if (!keyword) return session.text(".nokeyword")
-
+        logInfo(session.stripped.content)
         let neteaseData: SongData[] = [];
         try {
           neteaseData = await searchNetEase(keyword, config.searchListCount)
@@ -207,9 +218,8 @@ export function apply(ctx: Context, config) {
 
           selected = neteaseData[serialNumber - 1]
         }
-
+        const interval = selected.duration / 1000;
         const [tipMessageId] = await session.send(h.quote(quoteId) + `` + h.text(config.generationTip))
-
         try {
           let src: string = '';
           if (config.metingAPI === 'meting.jmstrand.cn') {
@@ -217,20 +227,41 @@ export function apply(ctx: Context, config) {
           } else if (config.metingAPI === 'api.qijieya.cn') {
             src = `https://api.qijieya.cn/meting/?type=url&id=${selected.id}`;
           }
-          const interval = selected.duration / 1000;
-
+          logInfo(selected)
+          logInfo(src)
+          logInfo(config.srcToWhat)
           if (interval * 1000 > config.maxSongDuration * 1000 * 60) {
             if (config.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
             return `${h.quote(quoteId)}` + session.text(".durationExceeded")
           }
-          if (config.srcToWhat === "src") {
-            await session.send(h.audio(src))
-          } else if (config.srcToWhat === "buffer") {
-            const srcFile = (await ctx.http.file(src)).data
-            const srcBuffer = Buffer.from(srcFile)
-            await session.send(h.audio(srcBuffer, 'audio/mpeg'))
-          } else if (config.srcToWhat === "text") {
-            await session.send(h.text(src))
+          switch (config.srcToWhat) {
+            case 'text':
+              await session.send(h.text(src));
+              break;
+            case 'audio':
+              await session.send(h.audio(src));
+              break;
+            case 'audiobuffer': {
+              const srcFile = (await ctx.http.file(src)).data;
+              const srcBuffer = Buffer.from(srcFile);
+              await session.send(h.audio(srcBuffer, 'audio/mpeg'));
+              break;
+            }
+            case 'video': {
+              await session.send(h.video(src));
+              break;
+            }
+            case 'file': {
+              const tempFilePath = await downloadFile(src);
+              const fileUrl = url.pathToFileURL(tempFilePath).href;
+              logInfo(fileUrl)
+              await session.send(h.file(fileUrl));
+              await fs.unlinkSync(tempFilePath);
+              break;
+            }
+            default:
+              ctx.logger.error(`Unsupported send type: ${config.srcToWhat}`);
+              return
           }
 
           if (config.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
@@ -240,6 +271,39 @@ export function apply(ctx: Context, config) {
           return `${h.quote(quoteId)}` + session.text(".getSongFailed")
         }
       })
+
+    async function downloadFile(url: string) {
+      try {
+        const file = await ctx.http.file(url);
+        const contentType = file.type || file.mime;
+        let ext = '.mp3';
+        if (contentType) {
+          if (contentType.includes('audio/mpeg')) {
+            ext = '.mp3';
+          } else if (contentType.includes('audio/mp4')) {
+            ext = '.m4a';
+          } else if (contentType.includes('audio/wav')) {
+            ext = '.wav';
+          } else if (contentType.includes('audio/flac')) {
+            ext = '.flac';
+          }
+        }
+        let filename = crypto.randomBytes(8).toString('hex') + ext;
+        const filePath = path.join(os.tmpdir(), filename);
+        const buffer = Buffer.from(file.data);
+        await fs.writeFileSync(filePath, buffer);
+        return filePath;
+      } catch (error) {
+        logger.error('文件下载失败:', error);
+        return null;
+      }
+    }
+
+    function logInfo(...args: any[]) {
+      if (config.loggerinfo) {
+        (logger.info as (...args: any[]) => void)(...args);
+      }
+    }
 
     async function searchNetEase(keyword: string, limit: number = 10): Promise<SongData[]> {
       const searchApiUrl = `https://music.163.com/api/search/get/web?csrf_token=hlpretag=&hlposttag=&s=${encodeURIComponent(keyword)}&type=1&offset=0&total=true&limit=${limit}`;
@@ -261,6 +325,7 @@ export function apply(ctx: Context, config) {
             duration: song.duration
           };
         });
+        logInfo(songList)
         return songList;
       } catch (error) {
         logger.error('网易云音乐搜索出错', error);
