@@ -1,12 +1,12 @@
 {
   "name": "koishi-plugin-music-voice",
   "description": "Provide the selected song as a voice",
-  "version": "1.6.6",
+  "version": "1.6.7",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
     "lib",
-    "dist"
+    "src"
   ],
   "license": "MIT",
   "keywords": [
@@ -18,6 +18,10 @@
     "song",
     "download"
   ],
+  "homepage": "https://github.com/idranme/koishi-plugin-music-voice",
+  "bugs": {
+    "url": "https://github.com/idranme/koishi-plugin-music-voice/issues"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/idranme/koishi-plugin-music-voice.git"

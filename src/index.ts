@@ -80,7 +80,7 @@ export const Config = Schema.intersect([
 
   Schema.object({
     metingAPI: Schema.union([
-      Schema.const('meting.jmstrand.cn').description('（推荐）`meting.jmstrand.cn`').experimental(),
+      Schema.const('api.injahow.cn').description('（推荐）`api.injahow.cn`').experimental(),
       Schema.const('api.qijieya.cn').description('（推荐）`api.qijieya.cn`').experimental(),
     ]).description("获取音乐直链的后端API").default("api.qijieya.cn"),
     srcToWhat: Schema.union([
@@ -222,8 +222,8 @@ export function apply(ctx: Context, config) {
         const [tipMessageId] = await session.send(h.quote(quoteId) + `` + h.text(config.generationTip))
         try {
           let src: string = '';
-          if (config.metingAPI === 'meting.jmstrand.cn') {
-            src = `https://meting.jmstrand.cn/?type=url&id=${selected.id}`;
+          if (config.metingAPI === 'api.injahow.cn') {
+            src = `https://api.injahow.cn/meting/?type=url&id=${selected.id}`;
           } else if (config.metingAPI === 'api.qijieya.cn') {
             src = `https://api.qijieya.cn/meting/?type=url&id=${selected.id}`;
           }
