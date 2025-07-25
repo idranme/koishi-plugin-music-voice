@@ -79,6 +79,7 @@ export const Config = Schema.intersect([
   }).description('进阶设置'),
 
   Schema.object({
+    useProxy: Schema.boolean().description('是否使用 Apifox Web Proxy 代理请求（适用于海外用户）').default(false),
     metingAPI: Schema.union([
       Schema.const('api.injahow.cn').description('（推荐）`api.injahow.cn`').experimental(),
       Schema.const('api.qijieya.cn').description('（推荐）`api.qijieya.cn`').experimental(),
@@ -305,10 +306,41 @@ export function apply(ctx: Context, config) {
       }
     }
 
-    async function searchNetEase(keyword: string, limit: number = 10): Promise<SongData[]> {
-      const searchApiUrl = `https://music.163.com/api/search/get/web?csrf_token=hlpretag=&hlposttag=&s=${encodeURIComponent(keyword)}&type=1&offset=0&total=true&limit=${limit}`;
+    async function requestWithProxy(targetUrl: string): Promise<string> {
+      const proxyUrl = 'https://web-proxy.apifox.cn/api/v1/request';
+
       try {
-        const searchApiResponse = await ctx.http.get(searchApiUrl);
+        const response = await ctx.http.post(proxyUrl, {}, {
+          headers: {
+            'api-u': targetUrl,
+            'api-o0': 'method=GET, timings=true, timeout=3000',
+            'Content-Type': 'application/json'
+          }
+        });
+
+        return response;
+      } catch (error) {
+        logger.error('代理请求失败', error);
+        throw error;
+      }
+    }
+
+    async function searchNetEase(keyword: string, limit: number = 10): Promise<SongData[]> {
+      const searchApiUrl = `http://music.163.com/api/search/get/web?csrf_token=hlpretag=&hlposttag=&s=${encodeURIComponent(keyword)}&type=1&offset=0&total=true&limit=${limit}`;
+
+      try {
+        let searchApiResponse: string;
+
+        if (config.useProxy) {
+          // 使用代理请求
+          logInfo('使用代理请求网易云音乐API');
+          searchApiResponse = await requestWithProxy(searchApiUrl);
+        } else {
+          // 直接请求
+          logInfo('直接请求网易云音乐API');
+          searchApiResponse = await ctx.http.get(searchApiUrl);
+        }
+
         const parsedSearchApiResponse: NetEaseSearchResponse = JSON.parse(searchApiResponse);
         const searchData = parsedSearchApiResponse.result;
 
