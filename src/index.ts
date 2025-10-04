@@ -380,7 +380,6 @@ export function apply(ctx: Context, config) {
           <style>
             body {
               margin: 0;
-              font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei", SimSun, sans-serif;
               font-size: 16px;
               background: ${config.backgroundChannel};
               color: ${config.textChannel};
