@@ -17,13 +17,11 @@ export const usage = `
 
 ---
 
-<a target="_blank" href="https://github.com/idranme/koishi-plugin-music-voice?tab=readme-ov-file#%E4%BD%BF%E7%94%A8%E8%AF%A5%E6%8F%92%E4%BB%B6%E6%90%9C%E7%B4%A2%E5%B9%B6%E8%8E%B7%E5%8F%96%E6%AD%8C%E6%9B%B2">➤ 食用方法点此获取</a>
+<a target="_blank" href="https://github.com/idranme/koishi-plugin-music-voice">➤ 食用方法点此获取</a>
 
-本插件旨在 安装后即可语音点歌。
+本插件旨在提供开箱即用的语音点歌功能。
 
 因各种不可抗力因素，目前仅支持使用网易云音乐。
-
-
 
 ---
 
@@ -33,16 +31,10 @@ export const usage = `
 
 - [puppeteer服务](/market?keyword=puppeteer) （可选安装）
 
-- [http服务](/market?keyword=http+email:shigma10826@gmail.com) （已默认开启）
-
-- [logger服务](/market?keyword=logger+email:shigma10826@gmail.com) （已默认开启）
-
-- i18n服务 （已默认开启）
-
 此外可能还需要这些服务才能发送语音：
 
 
-- [ffmpeg服务](/market?keyword=ffmpeg)  （可选安装）
+- [ffmpeg服务](/market?keyword=ffmpeg)  （可选安装）（此服务可能额外依赖[downloads服务](/market?keyword=downloads)）
 
 - [silk服务](/market?keyword=silk)  （可选安装）
 
@@ -55,12 +47,13 @@ export const Config = Schema.intersect([
     commandName: Schema.string().description('使用的指令名称').default('music'),
     commandAlias: Schema.string().description('使用的指令别名').default('mdff'),
     generationTip: Schema.string().description('生成语音时返回的文字提示内容').default('生成语音中…'),
+    recall: Schema.boolean().description('是否在发送语音后撤回 `generationTip（生成语音中…）`').default(true),
     waitForTimeout: Schema.natural().min(1).step(1).description('等待用户选择歌曲序号的最长时间 （秒）').default(45),
   }).description('基础设置'),
 
   Schema.object({
     imageMode: Schema.boolean().description('开启后 返回图片歌单（需要puppeteer服务）<br>关闭后 返回文本歌单').default(false),
-  }).description('歌单渲染设置'),
+  }).description('歌单设置'),
   Schema.union([
     Schema.object({
       imageMode: Schema.const(true).required(),
@@ -71,19 +64,40 @@ export const Config = Schema.intersect([
   ]),
 
   Schema.object({
-    searchListCount: Schema.natural().description('搜索歌曲列表的数量').default(20),
-    exitCommandList: Schema.array(String).role('table').description('退出选择指令。<br>一行一个指令').default(["0", "不听了"]),
+    searchListCount: Schema.natural().description('搜索的歌曲列表的数量').default(20),
+    exitCommandList: Schema.array(String).role('table').description('退出选择指令。<br>一行一个指令（此指令 在歌单内容中默认没有使用提示）').default(["0", "不听了"]),
     menuExitCommandTip: Schema.boolean().description('是否在歌单内容的后面，加上`退出选择指令`的文字提示').default(false),
-    recall: Schema.boolean().description('是否在发送语音后撤回 `generationTip`').default(true),
-    maxSongDuration: Schema.natural().min(1).step(1).description('歌曲最长持续时间（分钟）').default(30),
+    maxSongDuration: Schema.natural().min(1).step(1).description('歌曲最长持续时间（分钟）<br>超过此时长的音频 不会被发送').default(30),
   }).description('进阶设置'),
 
   Schema.object({
-    useProxy: Schema.boolean().description('是否使用 Apifox Web Proxy 代理请求（适用于海外用户）').default(false),
-    metingAPI: Schema.union([
-      Schema.const('api.injahow.cn').description('（推荐）`api.injahow.cn`').experimental(),
-      Schema.const('api.qijieya.cn').description('（推荐）`api.qijieya.cn`').experimental(),
-    ]).description("获取音乐直链的后端API").default("api.qijieya.cn"),
+    type: Schema.union([
+      Schema.const('apis').description('预设API'),
+      Schema.const('custom').description('自定义API')
+    ]).description("获取音乐直链的后端").default("apis"),
+  }).description('请求设置'),
+  Schema.union([
+    Schema.object({
+      type: Schema.const('apis'),
+      metingAPI: Schema.union([
+        Schema.const('https://api.injahow.cn/meting/').description('`api.injahow.cn`'),
+        Schema.const('https://api.qijieya.cn/meting/').description('`api.qijieya.cn`'),
+        Schema.const('https://api.moeyao.cn/meting/').description('`api.moeyao.cn`'),
+        Schema.const('https://meting.jinghuashang.cn/').description('`meting.jinghuashang.cn`'),
+        Schema.const('https://meting.qjqq.cn/').description('`meting.qjqq.cn`'),
+        Schema.const('https://api.crowya.com/meting/').description('`api.crowya.com`'),
+        Schema.const('https://meting-api.mlj-dragon.cn/meting/').description('`meting-api.mlj-dragon.cn`'),
+        Schema.const('https://api.amarea.cn/meting/').description('`api.amarea.cn`'),
+      ]).description("后端API地址<br>选择一个可以访问的API").default("https://api.injahow.cn/meting/"),
+    }),
+    Schema.object({
+      type: Schema.const('custom').required(),
+      text: Schema.string().default("https://api.injahow.cn/meting/").description("自定义后端API地址<br>填入一个可以访问的API地址").role('link'),
+    }),
+  ]),
+
+  Schema.object({
+    useProxy: Schema.boolean().description('是否使用 `Apifox Web Proxy` 代理请求（适用于海外用户）').default(false),
     srcToWhat: Schema.union([
       Schema.const('text').description('文本 h.text'),
       Schema.const('audio').description('语音 h.audio'),
@@ -223,10 +237,12 @@ export function apply(ctx: Context, config) {
         const [tipMessageId] = await session.send(h.quote(quoteId) + `` + h.text(config.generationTip))
         try {
           let src: string = '';
-          if (config.metingAPI === 'api.injahow.cn') {
-            src = `https://api.injahow.cn/meting/?type=url&id=${selected.id}`;
-          } else if (config.metingAPI === 'api.qijieya.cn') {
-            src = `https://api.qijieya.cn/meting/?type=url&id=${selected.id}`;
+          if (config.type === 'apis') {
+            // 使用预设的API
+            src = `${config.metingAPI}?type=url&id=${selected.id}`;
+          } else if (config.type === 'custom') {
+            // 使用自定义API
+            src = `${config.text}?type=url&id=${selected.id}`;
           }
           logInfo(selected)
           logInfo(src)
