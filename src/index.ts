@@ -145,7 +145,7 @@ export function apply(ctx: Context, config) {
         [config.commandName]: {
           description: `搜索歌曲并播放网易云音乐`,
           messages: {
-            "nokeyword": `请输入歌曲相关信息。\n➣示例：/${config.commandName} 蔚蓝档案`,
+            "nokeyword": `请输入歌曲相关信息。\n➣示例：${ctx.root.config.prefix[0]}${config.commandName} 蔚蓝档案`,
             "songlisterror": "无法获取歌曲列表，请稍后再试。",
             "invalidKeyword": "无法获取歌曲列表，请尝试更换关键词。",
             "exitCommandTip": "退出选择请发 [{0}] 中的任意内容<br/><br/>",
