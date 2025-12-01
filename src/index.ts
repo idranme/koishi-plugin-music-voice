@@ -65,6 +65,8 @@ export const Config = Schema.intersect([
 
   Schema.object({
     searchListCount: Schema.natural().description('搜索的歌曲列表的数量').default(20),
+    nextPageCommand: Schema.string().description('翻页指令-下一页').default('下一页'),
+    prevPageCommand: Schema.string().description('翻页指令-上一页').default('上一页'),
     exitCommandList: Schema.array(String).role('table').description('退出选择指令。<br>一行一个指令（此指令 在歌单内容中默认没有使用提示）').default(["0", "不听了"]),
     menuExitCommandTip: Schema.boolean().description('是否在歌单内容的后面，加上`退出选择指令`的文字提示').default(false),
     maxSongDuration: Schema.natural().min(1).step(1).description('歌曲最长持续时间（分钟）<br>超过此时长的音频 不会被发送').default(30),
@@ -157,6 +159,8 @@ export function apply(ctx: Context, config) {
             "invalidNumber": "序号输入错误，已退出歌曲选择。",
             "durationExceeded": "歌曲持续时间超出限制。",
             "getSongFailed": "获取歌曲失败，请稍后再试。",
+            "noMoreSongs": "没有更多歌曲了。",
+            "alreadyOnFirstPage": "已经是第一页了。",
           }
         },
       }
@@ -169,69 +173,115 @@ export function apply(ctx: Context, config) {
         if (!keyword) return session.text(".nokeyword")
         logInfo(session.stripped.content)
         let neteaseData: SongData[] = [];
-        try {
-          neteaseData = await searchNetEase(keyword, config.searchListCount)
-
-        } catch (err) {
-          logger.warn('获取网易云音乐数据时发生错误', err.message)
-          return session.text(".songlisterror")
-        }
-
-        if (!neteaseData.length) return session.text(".invalidKeyword")
-
-        const neteaseListText = neteaseData.length ? formatSongList(neteaseData, 'NetEase Music', 0) : '<b>NetEase Music</b>: 无法获取歌曲列表'
-
-        const listText = `${neteaseListText}`
-        const exitCommands = config.exitCommandList;
-        const exitCommandTip = config.menuExitCommandTip ? session.text(".exitCommandTip", [exitCommands.join(', ')]) : ''
         let selected: SongData;
         let quoteId = session.messageId;
 
-        if (options.number !== undefined) { // 如果用户提供了 -n 选项
+        // 优先处理-n选项，不进入分页逻辑
+        if (options.number !== undefined) {
+          try {
+            //-n选项只搜索第一页
+            neteaseData = await searchNetEase(keyword, config.searchListCount, 0);
+          } catch (err) {
+            logger.warn('获取网易云音乐数据时发生错误', err.message);
+            return session.text(".songlisterror");
+          }
+
+          if (!neteaseData.length) return session.text(".invalidKeyword");
+
           const serialNumber = options.number;
           if (!Number.isInteger(serialNumber) || serialNumber < 1 || serialNumber > neteaseData.length) {
-            // 如果序号无效，返回错误提示
             return `${h.quote(quoteId)}` + session.text(".invalidNumber");
           }
-          selected = neteaseData[serialNumber - 1]; // 直接根据序号选择歌曲
-
+          selected = neteaseData[serialNumber - 1];
         } else {
+          // 进入分页交互逻辑
+          let currentPage = 0;
+          const pageSize = config.searchListCount;
 
-          if (config.imageMode) {
-            const imageBuffer = await generateSongListImage(listText, config)
-            if (!imageBuffer) { // 检查 imageBuffer 是否为 null
-              return session.text(".imageGenerationFailed");
+          while (true) {
+            try {
+              neteaseData = await searchNetEase(keyword, pageSize, currentPage * pageSize);
+            } catch (err) {
+              logger.warn('获取网易云音乐数据时发生错误', err.message);
+              return session.text(".songlisterror");
             }
-            const payload = [
-              h.quote(quoteId),
-              h.image(imageBuffer, 'image/png'),
-              h.text(session.text(".imageListPrompt", [exitCommandTip.replaceAll('<br/>', '\n'), config.waitForTimeout]))
-            ]
-            const msg = await session.send(payload)
-            quoteId = msg.at(-1)
-          } else {
-            const payload = `${h.quote(quoteId)}` + session.text(".textListPrompt", [listText, exitCommandTip, config.waitForTimeout])
-            const msg = await session.send(h.unescape(payload))
-            quoteId = msg.at(-1)
+
+            // 处理没有搜索结果的情况
+            if (!neteaseData.length) {
+              if (currentPage === 0) {
+                return session.text(".invalidKeyword");
+              } else {
+                await session.send(`${h.quote(quoteId)}` + session.text(".noMoreSongs"));
+                currentPage--; // 回到上一页
+                continue;
+              }
+            }
+
+            const listStartIndex = currentPage * pageSize;
+            const neteaseListText = formatSongList(neteaseData, 'NetEase Music', listStartIndex);
+            const listText = `${neteaseListText}`;
+            const exitCommands = config.exitCommandList;
+            const exitCommandTip = config.menuExitCommandTip ? session.text(".exitCommandTip", [exitCommands.join(', ')]) : '';
+
+            // 根据配置发送图片或文本歌单
+            if (config.imageMode) {
+              const imageBuffer = await generateSongListImage(listText, config);
+              if (!imageBuffer) {
+                return session.text(".imageGenerationFailed");
+              }
+              const payload = [
+                h.quote(quoteId),
+                h.image(imageBuffer, 'image/png'),
+                h.text(session.text(".imageListPrompt", [exitCommandTip.replaceAll('<br/>', '\n'), config.waitForTimeout]))
+              ];
+              const msg = await session.send(payload);
+              quoteId = msg.at(-1);
+            } else {
+              const payload = `${h.quote(quoteId)}` + session.text(".textListPrompt", [listText, exitCommandTip, config.waitForTimeout]);
+              const msg = await session.send(h.unescape(payload));
+              quoteId = msg.at(-1);
+            }
+
+            // 等待用户输入，每次循环重置超时时间
+            const input = await session.prompt((session) => {
+              quoteId = session.messageId;
+              return h.select(session.elements, 'text').join('');
+            }, { timeout: config.waitForTimeout * 1000 });
+
+            if (isNullable(input)) return `${quoteId ? h.quote(quoteId) : ''}` + session.text(".promptTimeout");
+
+            if (exitCommands.includes(input)) {
+              return `${h.quote(quoteId)}` + session.text(".exitPrompt");
+            }
+
+            // 处理翻页指令
+            if (input.trim() === config.nextPageCommand) {
+              currentPage++;
+              continue;
+            }
+
+            if (input.trim() === config.prevPageCommand) {
+              if (currentPage > 0) {
+                currentPage--;
+                continue;
+              } else {
+                await session.send(`${h.quote(quoteId)}` + session.text(".alreadyOnFirstPage"));
+                continue;
+              }
+            }
+
+            // 处理选歌序号
+            const serialNumber = +input;
+            const selectStartIndex = currentPage * pageSize + 1;
+            const selectEndIndex = currentPage * pageSize + neteaseData.length;
+
+            if (!Number.isInteger(serialNumber) || serialNumber < selectStartIndex || serialNumber > selectEndIndex) {
+              return `${h.quote(quoteId)}` + session.text(".invalidNumber");
+            }
+
+            selected = neteaseData[serialNumber - selectStartIndex];
+            break; // 歌曲选择成功，跳出循环
           }
-
-          const input = await session.prompt((session) => {
-            quoteId = session.messageId
-            return h.select(session.elements, 'text').join('')
-          }, { timeout: config.waitForTimeout * 1000 })
-
-          if (isNullable(input)) return `${quoteId ? h.quote(quoteId) : ''}` + session.text(".promptTimeout")
-
-          if (exitCommands.includes(input)) {
-            return `${h.quote(quoteId)}` + session.text(".exitPrompt")
-          }
-
-          const serialNumber = +input
-          if (!Number.isInteger(serialNumber) || serialNumber < 1 || serialNumber > neteaseData.length) {
-            return `${h.quote(quoteId)}` + session.text(".invalidNumber")
-          }
-
-          selected = neteaseData[serialNumber - 1]
         }
         const interval = selected.duration / 1000;
         const [tipMessageId] = await session.send(h.quote(quoteId) + `` + h.text(config.generationTip))
@@ -341,8 +391,8 @@ export function apply(ctx: Context, config) {
       }
     }
 
-    async function searchNetEase(keyword: string, limit: number = 10): Promise<SongData[]> {
-      const searchApiUrl = `http://music.163.com/api/search/get/web?csrf_token=hlpretag=&hlposttag=&s=${encodeURIComponent(keyword)}&type=1&offset=0&total=true&limit=${limit}`;
+    async function searchNetEase(keyword: string, limit: number = 10, offset: number = 0): Promise<SongData[]> {
+      const searchApiUrl = `http://music.163.com/api/search/get/web?csrf_token=hlpretag=&hlposttag=&s=${encodeURIComponent(keyword)}&type=1&offset=${offset}&total=true&limit=${limit}`;
 
       try {
         let searchApiResponse: string;
