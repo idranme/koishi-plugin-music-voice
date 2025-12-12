@@ -223,19 +223,18 @@ export function apply(ctx: Context, config) {
             const exitCommands = config.exitCommandList;
             const exitCommandTip = config.menuExitCommandTip ? session.text(".exitCommandTip", [exitCommands.join(', ')]) : '';
 
-            // 根据配置发送图片或文本歌单
             if (config.imageMode) {
               const imageBuffer = await generateSongListImage(listText, config);
               if (!imageBuffer) {
                 return session.text(".imageGenerationFailed");
               }
-              const payload = [
+              await session.send([
                 h.quote(quoteId),
                 h.image(imageBuffer, 'image/png'),
-                h.text(session.text(".imageListPrompt", [exitCommandTip.replaceAll('<br/>', '\n'), config.waitForTimeout]))
-              ];
-              const msg = await session.send(payload);
-              quoteId = msg.at(-1);
+              ]);
+              const promptMessage = session.text(".imageListPrompt", [exitCommandTip.replaceAll('<br/>', '\n'), config.waitForTimeout]);
+              const msg = await session.send(promptMessage);
+              quoteId = msg[0];
             } else {
               const payload = `${h.quote(quoteId)}` + session.text(".textListPrompt", [listText, exitCommandTip, config.waitForTimeout]);
               const msg = await session.send(h.unescape(payload));
