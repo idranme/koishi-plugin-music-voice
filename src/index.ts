@@ -47,7 +47,14 @@ export const Config = Schema.intersect([
     commandName: Schema.string().description('使用的指令名称').default('music'),
     commandAlias: Schema.string().description('使用的指令别名').default('mdff'),
     generationTip: Schema.string().description('生成语音时返回的文字提示内容').default('生成语音中…'),
-    recall: Schema.boolean().description('是否在发送语音后撤回 `generationTip（生成语音中…）`').default(true),
+    recallMessages: Schema.array(Schema.union([
+      Schema.const('generationTip').description('生成提示语（生成语音中…）'),
+      Schema.const('songList').description('歌单消息'),
+      Schema.const('errorTip').description('错误提示（超时/取消/序号错误/时长超限/获取失败）'),
+    ]))
+      .role('checkbox')
+      .default(['generationTip', 'songList'])
+      .description('选择在发送语音后需要撤回的消息类型'),
     waitForTimeout: Schema.natural().min(1).step(1).description('等待用户选择歌曲序号的最长时间 （秒）').default(45),
   }).description('基础设置'),
 
@@ -175,6 +182,7 @@ export function apply(ctx: Context, config) {
         let neteaseData: SongData[] = [];
         let selected: SongData;
         let quoteId = session.messageId;
+        let songListMessageId: string | null = null; // 用于存储歌单消息ID
 
         // 优先处理-n选项，不进入分页逻辑
         if (options.number !== undefined) {
@@ -228,16 +236,18 @@ export function apply(ctx: Context, config) {
               if (!imageBuffer) {
                 return session.text(".imageGenerationFailed");
               }
-              await session.send([
+              const songListMsg = await session.send([
                 h.quote(quoteId),
                 h.image(imageBuffer, 'image/png'),
               ]);
+              songListMessageId = songListMsg[0]; // 保存歌单消息ID
               const promptMessage = session.text(".imageListPrompt", [exitCommandTip.replaceAll('<br/>', '\n'), config.waitForTimeout]);
               const msg = await session.send(promptMessage);
               quoteId = msg[0];
             } else {
               const payload = `${h.quote(quoteId)}` + session.text(".textListPrompt", [listText, exitCommandTip, config.waitForTimeout]);
               const msg = await session.send(h.unescape(payload));
+              songListMessageId = msg.at(-1); // 保存歌单消息ID
               quoteId = msg.at(-1);
             }
 
@@ -247,10 +257,32 @@ export function apply(ctx: Context, config) {
               return h.select(session.elements, 'text').join('');
             }, { timeout: config.waitForTimeout * 1000 });
 
-            if (isNullable(input)) return `${quoteId ? h.quote(quoteId) : ''}` + session.text(".promptTimeout");
+            if (isNullable(input)) {
+              // 超时时撤回歌单消息
+              if (config.recallMessages.includes('songList') && songListMessageId) {
+                session.bot.deleteMessage(session.channelId, songListMessageId);
+              }
+              const errorMsg = `${quoteId ? h.quote(quoteId) : ''}` + session.text(".promptTimeout");
+              const errorMsgIds = await session.send(errorMsg);
+              // 撤回错误提示
+              if (config.recallMessages.includes('errorTip') && errorMsgIds?.[0]) {
+                setTimeout(() => session.bot.deleteMessage(session.channelId, errorMsgIds[0]), 3000);
+              }
+              return;
+            }
 
             if (exitCommands.includes(input)) {
-              return `${h.quote(quoteId)}` + session.text(".exitPrompt");
+              // 取消选择时撤回歌单消息
+              if (config.recallMessages.includes('songList') && songListMessageId) {
+                session.bot.deleteMessage(session.channelId, songListMessageId);
+              }
+              const errorMsg = `${h.quote(quoteId)}` + session.text(".exitPrompt");
+              const errorMsgIds = await session.send(errorMsg);
+              // 撤回错误提示
+              if (config.recallMessages.includes('errorTip') && errorMsgIds?.[0]) {
+                setTimeout(() => session.bot.deleteMessage(session.channelId, errorMsgIds[0]), 3000);
+              }
+              return;
             }
 
             // 处理翻页指令
@@ -275,7 +307,17 @@ export function apply(ctx: Context, config) {
             const selectEndIndex = currentPage * pageSize + neteaseData.length;
 
             if (!Number.isInteger(serialNumber) || serialNumber < selectStartIndex || serialNumber > selectEndIndex) {
-              return `${h.quote(quoteId)}` + session.text(".invalidNumber");
+              // 序号错误时撤回歌单消息
+              if (config.recallMessages.includes('songList') && songListMessageId) {
+                session.bot.deleteMessage(session.channelId, songListMessageId);
+              }
+              const errorMsg = `${h.quote(quoteId)}` + session.text(".invalidNumber");
+              const errorMsgIds = await session.send(errorMsg);
+              // 撤回错误提示
+              if (config.recallMessages.includes('errorTip') && errorMsgIds?.[0]) {
+                setTimeout(() => session.bot.deleteMessage(session.channelId, errorMsgIds[0]), 3000);
+              }
+              return;
             }
 
             selected = neteaseData[serialNumber - selectStartIndex];
@@ -297,8 +339,20 @@ export function apply(ctx: Context, config) {
           logInfo(src)
           logInfo(config.srcToWhat)
           if (interval * 1000 > config.maxSongDuration * 1000 * 60) {
-            if (config.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
-            return `${h.quote(quoteId)}` + session.text(".durationExceeded")
+            // 歌曲时长超限时撤回提示消息和歌单消息
+            if (config.recallMessages.includes('generationTip')) {
+              session.bot.deleteMessage(session.channelId, tipMessageId);
+            }
+            if (config.recallMessages.includes('songList') && songListMessageId) {
+              session.bot.deleteMessage(session.channelId, songListMessageId);
+            }
+            const errorMsg = `${h.quote(quoteId)}` + session.text(".durationExceeded");
+            const errorMsgIds = await session.send(errorMsg);
+            // 撤回错误提示
+            if (config.recallMessages.includes('errorTip') && errorMsgIds?.[0]) {
+              setTimeout(() => session.bot.deleteMessage(session.channelId, errorMsgIds[0]), 3000);
+            }
+            return;
           }
           switch (config.srcToWhat) {
             case 'text':
@@ -330,11 +384,29 @@ export function apply(ctx: Context, config) {
               return
           }
 
-          if (config.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
+          // 发送语音成功后撤回提示消息和歌单消息
+          if (config.recallMessages.includes('generationTip')) {
+            session.bot.deleteMessage(session.channelId, tipMessageId);
+          }
+          if (config.recallMessages.includes('songList') && songListMessageId) {
+            session.bot.deleteMessage(session.channelId, songListMessageId);
+          }
         } catch (error) {
-          if (config.recall) session.bot.deleteMessage(session.channelId, tipMessageId)
+          // 发送语音失败时撤回提示消息和歌单消息
+          if (config.recallMessages.includes('generationTip')) {
+            session.bot.deleteMessage(session.channelId, tipMessageId);
+          }
+          if (config.recallMessages.includes('songList') && songListMessageId) {
+            session.bot.deleteMessage(session.channelId, songListMessageId);
+          }
           logger.error('获取歌曲详情或发送语音失败', error);
-          return `${h.quote(quoteId)}` + session.text(".getSongFailed")
+          const errorMsg = `${h.quote(quoteId)}` + session.text(".getSongFailed");
+          const errorMsgIds = await session.send(errorMsg);
+          // 撤回错误提示
+          if (config.recallMessages.includes('errorTip') && errorMsgIds?.[0]) {
+            setTimeout(() => session.bot.deleteMessage(session.channelId, errorMsgIds[0]), 3000);
+          }
+          return;
         }
       })
 
