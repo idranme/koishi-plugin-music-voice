@@ -84,6 +84,22 @@ export const Config = Schema.intersect([
   }).description('进阶设置'),
 
   Schema.object({
+    enableRateLimit: Schema.boolean().description('是否启用频率限制').default(false),
+  }).description('频率限制'),
+  Schema.union([
+    Schema.object({
+      enableRateLimit: Schema.const(true).required(),
+      rateLimitScope: Schema.union([
+        Schema.const('user').description('对单个用户限制'),
+        Schema.const('channel').description('对单个频道限制'),
+        Schema.const('platform').description('对单个平台限制'),
+      ]).description('频率限制作用范围').default('user'),
+      rateLimitInterval: Schema.natural().min(1).step(1).description('频率限制间隔时间（秒）').default(60),
+    }),
+    Schema.object({}),
+  ]),
+
+  Schema.object({
     type: Schema.union([
       Schema.const('apis').description('预设API'),
       Schema.const('custom').description('自定义API')
@@ -153,6 +169,9 @@ export function apply(ctx: Context, config) {
 
     const logger = ctx.logger('music-voice')
 
+    // 频率限制记录：存储上次使用时间
+    const rateLimitMap = new Map<string, number>();
+
     ctx.i18n.define("zh-CN", {
       commands: {
         [config.commandName]: {
@@ -172,6 +191,7 @@ export function apply(ctx: Context, config) {
             "getSongFailed": "获取歌曲失败，请稍后再试。",
             "noMoreSongs": "没有更多歌曲了。",
             "alreadyOnFirstPage": "已经是第一页了。",
+            "rateLimitExceeded": "操作过于频繁，请在 {0} 秒后再试。",
           }
         },
       }
@@ -182,6 +202,42 @@ export function apply(ctx: Context, config) {
       .option('number', '-n <number:number> 歌曲序号')
       .action(async ({ session, options }, keyword) => {
         if (!keyword) return session.text(".nokeyword")
+
+        // 频率限制检查
+        if (config.enableRateLimit) {
+          let rateLimitKey: string;
+          // 根据配置的作用范围生成不同的key
+          switch (config.rateLimitScope) {
+            case 'user':
+              rateLimitKey = `${session.platform}:${session.userId}`;
+              break;
+            case 'channel':
+              rateLimitKey = `${session.platform}:${session.channelId}`;
+              break;
+            case 'platform':
+              rateLimitKey = session.platform;
+              break;
+            default:
+              rateLimitKey = `${session.platform}:${session.userId}`;
+          }
+
+          const now = Date.now();
+          const lastUseTime = rateLimitMap.get(rateLimitKey);
+
+          if (lastUseTime) {
+            const timePassed = (now - lastUseTime) / 1000; // 转换为秒
+            const remainingTime = config.rateLimitInterval - timePassed;
+
+            if (remainingTime > 0) {
+              // 还在冷却时间内
+              return session.text(".rateLimitExceeded", [Math.ceil(remainingTime).toString()]);
+            }
+          }
+
+          // 更新最后使用时间
+          rateLimitMap.set(rateLimitKey, now);
+        }
+
         logInfo(session.stripped.content)
         let neteaseData: SongData[] = [];
         let selected: SongData;
