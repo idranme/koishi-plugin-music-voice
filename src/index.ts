@@ -287,7 +287,7 @@ export function apply(ctx: Context, config) {
             }
 
             const listStartIndex = currentPage * pageSize;
-            const neteaseListText = formatSongList(neteaseData, 'NetEase Music', listStartIndex);
+            const neteaseListText = formatSongList(neteaseData, 'NetEase Music', listStartIndex, config.imageMode);
             const listText = `${neteaseListText}`;
             const exitCommands = config.exitCommandList;
             const exitCommandTip = config.menuExitCommandTip ? session.text(".exitCommandTip", [exitCommands.join(', ')]) : '';
@@ -307,8 +307,11 @@ export function apply(ctx: Context, config) {
               songListMessageId = songListMsg[0]; // 保存歌单消息ID
               quoteId = songListMsg[0];
             } else {
-              const payload = `${h.quote(quoteId)}` + session.text(".textListPrompt", [listText, exitCommandTip, config.waitForTimeout]);
-              const msg = await session.send(h.unescape(payload));
+              // 文本模式：将 <br/> 替换为换行符
+              const textPrompt = session.text(".textListPrompt", [listText, exitCommandTip, config.waitForTimeout])
+                .replaceAll('<br/>', '\n');
+              const payload = `${h.quote(quoteId)}${textPrompt}`;
+              const msg = await session.send(payload);
               songListMessageId = msg.at(-1); // 保存歌单消息ID
               quoteId = msg.at(-1);
             }
@@ -600,12 +603,17 @@ export function apply(ctx: Context, config) {
       return screenshot
     }
 
-    function formatSongList(data: SongData[], platform: string, startIndex: number) {
+    function formatSongList(data: SongData[], platform: string, startIndex: number, isImageMode: boolean = true) {
+      const separator = isImageMode ? '<br/>' : '\n';
       const formatted = data.map((song, index) => {
         let item = `${index + startIndex + 1}. ${song.name} -- ${song.artists} -- ${song.albumName}`
         return item
-      }).join('<br/>')
-      return `<b>${platform}</b>:<br/>${formatted}`
+      }).join(separator)
+      if (isImageMode) {
+        return `<b>${platform}</b>:<br/>${formatted}`
+      } else {
+        return `${platform}:\n${formatted}`
+      }
     }
 
   })
