@@ -1,11 +1,12 @@
 {
   "name": "koishi-plugin-music-voice",
   "description": "Provide the selected song as a voice",
-  "version": "1.7.0",
+  "version": "2.0.0",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
     "lib",
+    "data",
     "src"
   ],
   "license": "MIT",
@@ -30,7 +31,7 @@
     "browser": true,
     "description": {
       "en": "Provide the selected song as a voice",
-      "zh": "/*语音点歌*/🎵提供QQ音乐、网易云音乐的歌曲，付费的也可以欸？！"
+      "zh": "/*语音点歌*/🎵提供网易云音乐的歌曲，以语音发送~"
     }
   },
   "peerDependencies": {
