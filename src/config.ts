@@ -14,7 +14,6 @@ export const PRESET_METING_APIS = [
 export const Config = Schema.intersect([
   Schema.object({
     commandName: Schema.string().description('使用的指令名称').default('music'),
-    commandAlias: Schema.string().description('使用的指令别名').default('mdff'),
     generationTip: Schema.string().description('生成语音时返回的文字提示内容').default('生成语音中...'),
     recallTargets: Schema.array(Schema.union([
       Schema.const('generationTip').description('生成提示语（生成语音中...）'),

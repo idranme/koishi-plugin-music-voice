@@ -63,6 +63,8 @@ async function sendSongList(
   ctx: Context,
   session: Session,
   config: RuntimeConfig,
+  keyword: string,
+  currentPage: number,
   songs: SongData[],
   startIndex: number,
   quoteId: string | null,
@@ -70,9 +72,9 @@ async function sendSongList(
 ) {
   if (config.preferQQMarkdown && supportsQQMarkdown(session)) {
     try {
-      const markdown = buildQQMarkdownSongList(songs, startIndex, config)
+      const markdown = buildQQMarkdownSongList(songs, keyword, currentPage, startIndex, config)
       const messageId = await sendQQMarkdownSongList(session, markdown, logger)
-      return { failed: false, messageId }
+      return { failed: false, messageId, isMarkdown: true }
     } catch (error) {
       logger.warn(`QQ 原生 Markdown 歌单发送失败，已回退为${config.listMode === 'image' ? '图片' : '文本'}歌单。`, error)
     }
@@ -86,7 +88,7 @@ async function sendSongList(
     const imageBuffer = await generateSongListImage(ctx, listText, config, logger)
 
     if (!imageBuffer) {
-      return { failed: true, messageId: null as string | null }
+      return { failed: true, messageId: null as string | null, isMarkdown: false }
     }
 
     const promptMessage = session.text('.imageListPrompt', [exitCommandTip.replaceAll('<br/>', '\n'), config.waitForTimeout])
@@ -96,7 +98,7 @@ async function sendSongList(
       h.text(promptMessage),
     ])
 
-    return { failed: false, messageId: getLastMessageId(messageIds) }
+    return { failed: false, messageId: getLastMessageId(messageIds), isMarkdown: false }
   }
 
   const listText = formatSongList(songs, 'NetEase Music', startIndex, false)
@@ -106,7 +108,7 @@ async function sendSongList(
   const promptMessage = session.text('.textListPrompt', [listText, exitCommandTip, config.waitForTimeout]).replaceAll('<br/>', '\n')
   const messageIds = await session.send(`${quote(quoteId)}${promptMessage}`)
 
-  return { failed: false, messageId: getLastMessageId(messageIds) }
+  return { failed: false, messageId: getLastMessageId(messageIds), isMarkdown: false }
 }
 
 async function sendSongByMode(ctx: Context, session: Session, src: string, config: RuntimeConfig) {
@@ -142,9 +144,14 @@ export function registerMusicVoiceCommand(ctx: Context, config: RuntimeConfig, d
   const rateLimitMap = new Map<string, number>()
 
   ctx.command(`${config.commandName || 'music'} <keyword:text>`)
-    .alias(config.commandAlias || 'mdff')
     .option('number', '-n <number:number> 歌曲序号')
+    .option('page', '-p <page:number> 页码')
+    .option('encodedKeyword', '-k <keyword:string> 编码关键词')
     .action(async ({ session, options }, keyword) => {
+      if (typeof options.encodedKeyword === 'string') {
+        keyword = Buffer.from(options.encodedKeyword, 'base64url').toString('utf8')
+      }
+
       if (!keyword) {
         return session.text('.nokeyword')
       }
@@ -181,10 +188,27 @@ export function registerMusicVoiceCommand(ctx: Context, config: RuntimeConfig, d
       }
 
       let neteaseData: SongData[] = []
+      const requestedPage = Number.isInteger(options.page) && options.page > 0
+        ? options.page - 1
+        : 0
 
       if (options.number !== undefined) {
+        const serialNumber = options.number
+
+        if (!Number.isInteger(serialNumber) || serialNumber < 1) {
+          if (deps.messageBehavior.shouldSilence('invalidNumber')) {
+            return
+          }
+
+          return `${quote(quoteId)}${session.text('.invalidNumber')}`
+        }
+
+        const pageSize = config.searchListCount
+        const pageIndex = Math.floor((serialNumber - 1) / pageSize)
+        const pageOffset = pageIndex * pageSize
+
         try {
-          neteaseData = await searchNetEase(ctx, config, keyword, config.searchListCount, 0, deps.logger)
+          neteaseData = await searchNetEase(ctx, config, keyword, pageSize, pageOffset, deps.logger)
         } catch (error) {
           deps.logger.warn('获取网易云歌曲列表失败', error)
           return session.text('.songlisterror')
@@ -194,9 +218,10 @@ export function registerMusicVoiceCommand(ctx: Context, config: RuntimeConfig, d
           return session.text('.invalidKeyword')
         }
 
-        const serialNumber = options.number
+        const pageStart = pageOffset + 1
+        const pageEnd = pageOffset + neteaseData.length
 
-        if (!Number.isInteger(serialNumber) || serialNumber < 1 || serialNumber > neteaseData.length) {
+        if (serialNumber < pageStart || serialNumber > pageEnd) {
           if (deps.messageBehavior.shouldSilence('invalidNumber')) {
             return
           }
@@ -204,9 +229,9 @@ export function registerMusicVoiceCommand(ctx: Context, config: RuntimeConfig, d
           return `${quote(quoteId)}${session.text('.invalidNumber')}`
         }
 
-        selected = neteaseData[serialNumber - 1]
+        selected = neteaseData[serialNumber - pageStart]
       } else {
-        let currentPage = 0
+        let currentPage = requestedPage
         const pageSize = config.searchListCount
 
         while (true) {
@@ -230,7 +255,17 @@ export function registerMusicVoiceCommand(ctx: Context, config: RuntimeConfig, d
           await cleanupSongList()
 
           const listStartIndex = currentPage * pageSize
-          const songListResult = await sendSongList(ctx, session, config, neteaseData, listStartIndex, quoteId, deps.logger)
+          const songListResult = await sendSongList(
+            ctx,
+            session,
+            config,
+            keyword,
+            currentPage,
+            neteaseData,
+            listStartIndex,
+            quoteId,
+            deps.logger,
+          )
 
           if (songListResult.failed) {
             return session.text('.imageGenerationFailed')
@@ -238,6 +273,11 @@ export function registerMusicVoiceCommand(ctx: Context, config: RuntimeConfig, d
 
           songListMessageId = songListResult.messageId
           quoteId = songListMessageId ?? quoteId
+
+          // Markdown 菜单通过按钮参数继续交互，不进入 prompt。
+          if (songListResult.isMarkdown) {
+            return
+          }
 
           const input = await session.prompt((promptSession) => {
             quoteId = promptSession.messageId ?? quoteId

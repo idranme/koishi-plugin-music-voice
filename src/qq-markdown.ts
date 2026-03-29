@@ -52,8 +52,14 @@ function escapeMarkdownCell(content: string) {
     .replaceAll('|', '\\|')
 }
 
-function buildInlineCommand(command: string, enter: boolean) {
-  return `mqqapi://aio/inlinecmd?command=${encodeURIComponent(command)}&enter=${enter ? 'true' : 'false'}&reply=false`
+function encodeKeyword(content: string) {
+  // 使用 base64url 缩短按钮参数，避免关键词被反复转义。
+  return Buffer.from(content, 'utf8').toString('base64url')
+}
+
+function buildInlineCommand(command: string, args: string[], enter: boolean) {
+  const fullCommand = [command, ...args].join(' ')
+  return `mqqapi://aio/inlinecmd?command=${encodeURIComponent(fullCommand)}&enter=${enter ? 'true' : 'false'}&reply=false`
 }
 
 function getInteractionId(session: Session) {
@@ -111,22 +117,24 @@ function extractMessageId(result: unknown): string | null {
 }
 
 export function supportsQQMarkdown(session: Session) {
-  return session.platform === 'qq' || session.platform === 'qqguild'
+  return session.platform === 'qq'
 }
 
 export function buildQQMarkdownSongList(
   songs: SongData[],
+  keyword: string,
+  currentPage: number,
   startIndex: number,
   config: RuntimeConfig,
 ) {
-  const cancelCommand = config.exitCommandList[0] ?? '0'
-  const prevPageLink = buildInlineCommand(config.prevPageCommand, true)
-  const nextPageLink = buildInlineCommand(config.nextPageCommand, true)
-  const cancelLink = buildInlineCommand(cancelCommand, true)
-  const retryLink = buildInlineCommand(`${config.commandName} `, false)
+  const commandName = config.commandName || 'music'
+  const encodedKeyword = encodeKeyword(keyword)
+  const retryLink = buildInlineCommand(commandName, [''], false)
+  const prevPageLink = buildInlineCommand(commandName, ['-p', String(Math.max(currentPage, 1)), '-k', encodedKeyword], true)
+  const nextPageLink = buildInlineCommand(commandName, ['-p', String(currentPage + 2), '-k', encodedKeyword], true)
   const rows = songs.map((song, index) => {
     const serialNumber = startIndex + index + 1
-    const playLink = buildInlineCommand(String(serialNumber), true)
+    const playLink = buildInlineCommand(commandName, ['-n', String(serialNumber), '-k', encodedKeyword], true)
 
     return `|[播放](${playLink})|${escapeMarkdownCell(song.name)}|${escapeMarkdownCell(song.artists)}|`
   })
@@ -138,17 +146,10 @@ export function buildQQMarkdownSongList(
     '|---|---|---|',
     ...rows,
     '',
-    `请在 ${config.waitForTimeout} 秒内选择歌曲。`,
+    `|[上一页](${prevPageLink})|[下一页](${nextPageLink})|`,
+    '|---|---|',
+    `|[再次点歌](${retryLink})| |`,
   ]
-
-  if (config.menuExitCommandTip) {
-    lines.push(`退出：发送 \`${config.exitCommandList.join(' / ')}\`。`)
-  }
-
-  lines.push('')
-  lines.push(`|[上一页](${prevPageLink})|[下一页](${nextPageLink})|`)
-  lines.push('|---|---|')
-  lines.push(`|[取消点歌](${cancelLink})|[再次点歌](${retryLink})|`)
 
   return lines.join('\n')
 }
