@@ -37,17 +37,21 @@ export const Config = Schema.intersect([
   }).description('基础设置'),
 
   Schema.object({
-    imageMode: Schema.boolean().description('开启后返回图片歌单（需要 puppeteer 服务），关闭后返回文本歌单').default(false),
+    listMode: Schema.union([
+      Schema.const('text').description('纯文本歌单'),
+      Schema.const('image').description('图片歌单（需要 puppeteer 服务）'),
+    ]).role('radio').description('歌单发送模式').default('text'),
+    preferQQMarkdown: Schema.boolean()
+      .description('是否在 qq平台 尝试使用原生 Markdown 发送歌单')
+      .default(false),
   }).description('歌单设置'),
   Schema.union([
     Schema.object({
-      imageMode: Schema.const(true).required(),
+      listMode: Schema.const('image').required(),
       textChannel: Schema.string().description('图片歌单的文字颜色').role('color').default('rgba(255, 255, 255, 1)'),
       backgroundChannel: Schema.string().description('图片歌单的背景颜色').role('color').default('rgba(0, 0, 0, 1)'),
     }),
-    Schema.object({
-      imageMode: Schema.const(false),
-    }),
+    Schema.object({}),
   ]),
 
   Schema.object({

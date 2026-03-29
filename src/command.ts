@@ -5,6 +5,7 @@ import { Context, h, isNullable, type Session } from 'koishi'
 
 import type { MessageBehavior } from './message-behavior'
 import { downloadSongFile, fetchSongBuffer, resolveSongSource, searchNetEase } from './network'
+import { buildQQMarkdownSongList, sendQQMarkdownSongList, supportsQQMarkdown } from './qq-markdown'
 import { formatSongList, generateSongListImage } from './render'
 import type { PluginLogger, RateLimitScope, RuntimeConfig, SilentMessage, SongData } from './types'
 
@@ -62,12 +63,26 @@ async function sendSongList(
   ctx: Context,
   session: Session,
   config: RuntimeConfig,
-  listText: string,
-  exitCommandTip: string,
+  songs: SongData[],
+  startIndex: number,
   quoteId: string | null,
   logger: PluginLogger,
 ) {
-  if (config.imageMode) {
+  if (config.preferQQMarkdown && supportsQQMarkdown(session)) {
+    try {
+      const markdown = buildQQMarkdownSongList(songs, startIndex, config)
+      const messageId = await sendQQMarkdownSongList(session, markdown, logger)
+      return { failed: false, messageId }
+    } catch (error) {
+      logger.warn(`QQ 原生 Markdown 歌单发送失败，已回退为${config.listMode === 'image' ? '图片' : '文本'}歌单。`, error)
+    }
+  }
+
+  if (config.listMode === 'image') {
+    const listText = formatSongList(songs, 'NetEase Music', startIndex, true)
+    const exitCommandTip = config.menuExitCommandTip
+      ? session.text('.exitCommandTip', [config.exitCommandList.join(', ')])
+      : ''
     const imageBuffer = await generateSongListImage(ctx, listText, config, logger)
 
     if (!imageBuffer) {
@@ -84,6 +99,10 @@ async function sendSongList(
     return { failed: false, messageId: getLastMessageId(messageIds) }
   }
 
+  const listText = formatSongList(songs, 'NetEase Music', startIndex, false)
+  const exitCommandTip = config.menuExitCommandTip
+    ? session.text('.exitCommandTip', [config.exitCommandList.join(', ')])
+    : ''
   const promptMessage = session.text('.textListPrompt', [listText, exitCommandTip, config.waitForTimeout]).replaceAll('<br/>', '\n')
   const messageIds = await session.send(`${quote(quoteId)}${promptMessage}`)
 
@@ -211,11 +230,7 @@ export function registerMusicVoiceCommand(ctx: Context, config: RuntimeConfig, d
           await cleanupSongList()
 
           const listStartIndex = currentPage * pageSize
-          const listText = formatSongList(neteaseData, 'NetEase Music', listStartIndex, config.imageMode)
-          const exitCommandTip = config.menuExitCommandTip
-            ? session.text('.exitCommandTip', [config.exitCommandList.join(', ')])
-            : ''
-          const songListResult = await sendSongList(ctx, session, config, listText, exitCommandTip, quoteId, deps.logger)
+          const songListResult = await sendSongList(ctx, session, config, neteaseData, listStartIndex, quoteId, deps.logger)
 
           if (songListResult.failed) {
             return session.text('.imageGenerationFailed')

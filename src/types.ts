@@ -13,6 +13,8 @@ export type RequestMode = 'apis' | 'custom'
 
 export type SendType = 'text' | 'audio' | 'audiobuffer' | 'video' | 'file'
 
+export type ListMode = 'text' | 'image'
+
 export interface MusicVoiceConfig {
   commandName: string
   commandAlias: string
@@ -20,7 +22,8 @@ export interface MusicVoiceConfig {
   recallTargets?: RecallTarget[]
   silentMessages?: SilentMessage[]
   waitForTimeout: number
-  imageMode: boolean
+  listMode: ListMode
+  preferQQMarkdown?: boolean
   textChannel?: string
   backgroundChannel?: string
   searchListCount: number
