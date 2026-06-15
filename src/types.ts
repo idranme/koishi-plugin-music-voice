@@ -11,6 +11,8 @@ export type RateLimitScope = 'user' | 'channel' | 'platform'
 
 export type RequestMode = 'apis' | 'custom'
 
+export type SearchRequestMode = 'parallel' | 'direct' | 'proxy'
+
 export type SendType = 'text' | 'audio' | 'audiobuffer' | 'video' | 'file'
 
 export type ListMode = 'text' | 'image'
@@ -37,6 +39,7 @@ export interface MusicVoiceConfig {
   rateLimitInterval?: number
   type: RequestMode
   text?: string
+  searchRequestMode: SearchRequestMode
   srcToWhat: SendType
   loggerinfo: boolean
 }

@@ -6,7 +6,7 @@ import path from 'node:path'
 import type { Context } from 'koishi'
 
 import { PRESET_METING_APIS } from './config'
-import type { NetEaseSearchResponse, PluginLogger, RuntimeConfig, SongData } from './types'
+import type { NetEaseSearchResponse, PluginLogger, RuntimeConfig, SearchRequestMode, SongData } from './types'
 
 const SEARCH_TIMEOUT_MS = 5000
 const SOURCE_TIMEOUT_MS = 5000
@@ -71,15 +71,19 @@ async function requestTextByProxy(targetUrl: string, signal: AbortSignal, timeou
   return await response.text()
 }
 
-function buildCandidates(targetUrls: string[], useProxy: boolean, timeoutMs: number): RequestCandidate[] {
+function buildCandidates(targetUrls: string[], mode: SearchRequestMode, timeoutMs: number): RequestCandidate[] {
   return targetUrls.flatMap((targetUrl) => {
     const label = getHostLabel(targetUrl)
-    const candidates: RequestCandidate[] = [{
-      label: `${label} 直连`,
-      run: (signal) => requestText(targetUrl, signal),
-    }]
+    const candidates: RequestCandidate[] = []
 
-    if (useProxy) {
+    if (mode === 'parallel' || mode === 'direct') {
+      candidates.push({
+        label: `${label} 直连`,
+        run: (signal) => requestText(targetUrl, signal),
+      })
+    }
+
+    if (mode === 'parallel' || mode === 'proxy') {
       candidates.push({
         label: `${label} 代理`,
         run: (signal) => requestTextByProxy(targetUrl, signal, timeoutMs),
@@ -90,8 +94,8 @@ function buildCandidates(targetUrls: string[], useProxy: boolean, timeoutMs: num
   })
 }
 
-function buildSmartCandidates(targetUrls: string[], timeoutMs: number) {
-  return buildCandidates(targetUrls, true, timeoutMs)
+function buildSearchCandidates(targetUrls: string[], mode: SearchRequestMode, timeoutMs: number) {
+  return buildCandidates(targetUrls, mode, timeoutMs)
 }
 
 function isMediaContentType(contentType: string | null) {
@@ -284,7 +288,7 @@ export async function searchNetEase(
   const searchApiUrl = `http://music.163.com/api/search/get/web?csrf_token=hlpretag=&hlposttag=&s=${encodeURIComponent(keyword)}&type=1&offset=${offset}&total=true&limit=${limit}`
   const response = await raceRequests(
     ctx,
-    buildSmartCandidates([searchApiUrl], SEARCH_TIMEOUT_MS),
+    buildSearchCandidates([searchApiUrl], config.searchRequestMode, SEARCH_TIMEOUT_MS),
     SEARCH_TIMEOUT_MS,
     parseSearchResponse,
     '网易云搜索',

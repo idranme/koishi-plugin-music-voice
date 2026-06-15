@@ -85,6 +85,11 @@ export const Config = Schema.intersect([
       Schema.const('apis').description('预设 API'),
       Schema.const('custom').description('自定义 API'),
     ]).description('获取音乐直链的后端').default('apis'),
+    searchRequestMode: Schema.union([
+      Schema.const('parallel').description('并行请求'),
+      Schema.const('direct').description('直连'),
+      Schema.const('proxy').description('代理'),
+    ]).role('radio').description('网易云搜索请求模式').default('parallel'),
   }).description('请求设置'),
   Schema.union([
     Schema.object({
