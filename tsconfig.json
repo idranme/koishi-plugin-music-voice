@@ -1,24 +1,22 @@
 {
   "compilerOptions": {
+    "strict": false,
     "rootDir": "src",
     "outDir": "lib",
     "target": "es2022",
-    "module": "esnext",
+    "lib": ["es2022"],
+    "module": "ESNext",
     "declaration": true,
     "emitDeclarationOnly": true,
     "composite": true,
     "incremental": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
-    "moduleResolution": "bundler",
+    "moduleResolution": "Bundler",
     "jsx": "react-jsx",
     "jsxImportSource": "@satorijs/element",
-    "types": [
-      "node",
-      "yml-register/types"
-    ]
   },
   "include": [
-    "src"
-  ]
+    "src",
+  ],
 }
