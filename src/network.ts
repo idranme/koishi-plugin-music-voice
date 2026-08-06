@@ -313,8 +313,8 @@ export async function resolveSongSource(
   logger: PluginLogger,
 ) {
   const targetUrls = config.type === 'apis'
-    ? PRESET_METING_APIS.map((api) => `${api}?type=url&id=${songId}`)
-    : [`${config.text}?type=url&id=${songId}`]
+    ? PRESET_METING_APIS.map((api) => `${api}?server=netease&type=url&id=${songId}`)
+    : [`${config.text}?server=netease&type=url&id=${songId}`]
 
   return await raceRequests(
     ctx,
