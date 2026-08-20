@@ -1,137 +1,164 @@
-import { promises as fs } from 'node:fs'
-import crypto from 'node:crypto'
-import os from 'node:os'
-import path from 'node:path'
+import { promises as fs } from "node:fs";
+import crypto from "node:crypto";
+import os from "node:os";
+import path from "node:path";
 
-import type { Context } from 'koishi'
+import type { Context } from "koishi";
 
-import { PRESET_METING_APIS } from './config'
-import type { NetEaseSearchResponse, PluginLogger, RuntimeConfig, SearchRequestMode, SongData } from './types'
+import { PRESET_METING_APIS } from "./config";
+import type {
+  NetEaseSearchResponse,
+  PluginLogger,
+  RuntimeConfig,
+  SearchRequestMode,
+  SongData,
+} from "./types";
 
-const SEARCH_TIMEOUT_MS = 5000
-const SOURCE_TIMEOUT_MS = 5000
-const DOWNLOAD_TIMEOUT_MS = 15000
-const PROXY_URL = 'https://web-proxy.apifox.cn/api/v1/request'
-const REQUEST_TIMEOUT_REASON = 'music-voice-request-timeout'
+const SEARCH_TIMEOUT_MS = 5000;
+const SOURCE_TIMEOUT_MS = 5000;
+const DOWNLOAD_TIMEOUT_MS = 15000;
+const PROXY_URL = "https://web-proxy.apifox.cn/api/v1/request";
+const REQUEST_TIMEOUT_REASON = "music-voice-request-timeout";
 
 interface RequestCandidate {
-  label: string
-  run: (signal: AbortSignal) => Promise<string>
+  label: string;
+  run: (signal: AbortSignal) => Promise<string>;
 }
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
-    return error.message
+    return error.message;
   }
 
-  return String(error)
+  return String(error);
 }
 
 function getHostLabel(targetUrl: string) {
   try {
-    return new URL(targetUrl).host
+    return new URL(targetUrl).host;
   } catch {
-    return targetUrl
+    return targetUrl;
   }
 }
 
-function createTimeout(ctx: Context, controller: AbortController, timeoutMs: number) {
-  return ctx.setTimeout(() => controller.abort(REQUEST_TIMEOUT_REASON), timeoutMs)
+function createTimeout(
+  ctx: Context,
+  controller: AbortController,
+  timeoutMs: number
+) {
+  return ctx.setTimeout(
+    () => controller.abort(REQUEST_TIMEOUT_REASON),
+    timeoutMs
+  );
 }
 
 async function requestText(targetUrl: string, signal: AbortSignal) {
   const response = await fetch(targetUrl, {
-    method: 'GET',
+    method: "GET",
     signal,
-  })
+  });
 
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
+    throw new Error(`HTTP ${response.status}`);
   }
 
-  return await response.text()
+  return await response.text();
 }
 
-async function requestTextByProxy(targetUrl: string, signal: AbortSignal, timeoutMs: number) {
+async function requestTextByProxy(
+  targetUrl: string,
+  signal: AbortSignal,
+  timeoutMs: number
+) {
   const response = await fetch(PROXY_URL, {
-    method: 'POST',
+    method: "POST",
     signal,
     headers: {
-      'api-u': targetUrl,
-      'api-o0': `method=GET, timings=true, timeout=${timeoutMs}`,
-      'Content-Type': 'application/json',
+      "api-u": targetUrl,
+      "api-o0": `method=GET, timings=true, timeout=${timeoutMs}`,
+      "Content-Type": "application/json",
     },
-    body: '{}',
-  })
+    body: "{}",
+  });
 
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
+    throw new Error(`HTTP ${response.status}`);
   }
 
-  return await response.text()
+  return await response.text();
 }
 
-function buildCandidates(targetUrls: string[], mode: SearchRequestMode, timeoutMs: number): RequestCandidate[] {
+function buildCandidates(
+  targetUrls: string[],
+  mode: SearchRequestMode,
+  timeoutMs: number
+): RequestCandidate[] {
   return targetUrls.flatMap((targetUrl) => {
-    const label = getHostLabel(targetUrl)
-    const candidates: RequestCandidate[] = []
+    const label = getHostLabel(targetUrl);
+    const candidates: RequestCandidate[] = [];
 
-    if (mode === 'parallel' || mode === 'direct') {
+    if (mode === "parallel" || mode === "direct") {
       candidates.push({
         label: `${label} 直连`,
         run: (signal) => requestText(targetUrl, signal),
-      })
+      });
     }
 
-    if (mode === 'parallel' || mode === 'proxy') {
+    if (mode === "parallel" || mode === "proxy") {
       candidates.push({
         label: `${label} 代理`,
         run: (signal) => requestTextByProxy(targetUrl, signal, timeoutMs),
-      })
+      });
     }
 
-    return candidates
-  })
+    return candidates;
+  });
 }
 
-function buildSearchCandidates(targetUrls: string[], mode: SearchRequestMode, timeoutMs: number) {
-  return buildCandidates(targetUrls, mode, timeoutMs)
+function buildSearchCandidates(
+  targetUrls: string[],
+  mode: SearchRequestMode,
+  timeoutMs: number
+) {
+  return buildCandidates(targetUrls, mode, timeoutMs);
 }
 
 function isMediaContentType(contentType: string | null) {
   if (!contentType) {
-    return false
+    return false;
   }
 
-  const normalized = contentType.toLowerCase()
-  return normalized.startsWith('audio/')
-    || normalized.startsWith('video/')
-    || normalized.includes('application/octet-stream')
+  const normalized = contentType.toLowerCase();
+  return (
+    normalized.startsWith("audio/") ||
+    normalized.startsWith("video/") ||
+    normalized.includes("application/octet-stream")
+  );
 }
 
 async function requestSource(targetUrl: string, signal: AbortSignal) {
   const response = await fetch(targetUrl, {
-    method: 'GET',
+    method: "GET",
     signal,
-  })
+  });
 
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
+    throw new Error(`HTTP ${response.status}`);
   }
 
-  if (isMediaContentType(response.headers.get('content-type'))) {
-    await response.body?.cancel()
-    return response.url || targetUrl
+  if (isMediaContentType(response.headers.get("content-type"))) {
+    await response.body?.cancel();
+    return response.url || targetUrl;
   }
 
-  return await response.text()
+  return await response.text();
 }
 
 function buildDirectCandidates(targetUrls: string[]): RequestCandidate[] {
   return targetUrls.map((targetUrl) => ({
     label: `${getHostLabel(targetUrl)} 直连`,
     run: (signal) => requestSource(targetUrl, signal),
-  }))
+  }));
 }
 
 async function raceRequests<T>(
@@ -140,140 +167,147 @@ async function raceRequests<T>(
   timeoutMs: number,
   parser: (content: string) => T | null,
   description: string,
-  logger: PluginLogger,
+  logger: PluginLogger
 ) {
   if (!candidates.length) {
-    throw new Error(`${description} 没有可用请求。`)
+    throw new Error(`${description} 没有可用请求。`);
   }
 
-  const controllers = candidates.map(() => new AbortController())
+  const controllers = candidates.map(() => new AbortController());
   const tasks = candidates.map(async (candidate, index) => {
-    const controller = controllers[index]
-    const disposeTimeout = createTimeout(ctx, controller, timeoutMs)
+    const controller = controllers[index];
+    const disposeTimeout = createTimeout(ctx, controller, timeoutMs);
 
     try {
-      logger.debug(`${description} 开始请求`, candidate.label)
-      const raw = await candidate.run(controller.signal)
-      const parsed = parser(raw)
+      logger.debug(`${description} 开始请求`, candidate.label);
+      const raw = await candidate.run(controller.signal);
+      const parsed = parser(raw);
 
       if (parsed === null) {
-        throw new Error('返回结果不可用')
+        throw new Error("返回结果不可用");
       }
 
-      logger.debug(`${description} 命中`, candidate.label)
-      return parsed
+      logger.debug(`${description} 命中`, candidate.label);
+      return parsed;
     } catch (error) {
-      if (controller.signal.aborted && controller.signal.reason === REQUEST_TIMEOUT_REASON) {
-        throw new Error(`${candidate.label} 请求超时`)
+      if (
+        controller.signal.aborted &&
+        controller.signal.reason === REQUEST_TIMEOUT_REASON
+      ) {
+        throw new Error(`${candidate.label} 请求超时`);
       }
 
       if (controller.signal.aborted) {
-        throw new Error(`${candidate.label} 已取消`)
+        throw new Error(`${candidate.label} 已取消`);
       }
 
-      throw new Error(`${candidate.label} 请求失败：${getErrorMessage(error)}`)
+      throw new Error(`${candidate.label} 请求失败：${getErrorMessage(error)}`);
     } finally {
-      disposeTimeout()
+      disposeTimeout();
     }
-  })
+  });
 
   try {
-    return await Promise.any(tasks)
+    return await Promise.any(tasks);
   } catch (error) {
-    logger.error(`${description} 全部失败`, error)
-    throw error
+    logger.error(`${description} 全部失败`, error);
+    throw error;
   } finally {
     for (const controller of controllers) {
-      controller.abort()
+      controller.abort();
     }
   }
 }
 
 function parseSearchResponse(content: string) {
   try {
-    const parsed = JSON.parse(content) as NetEaseSearchResponse
+    const parsed = JSON.parse(content) as NetEaseSearchResponse;
 
-    if (!parsed || typeof parsed !== 'object') {
-      return null
+    if (!parsed || typeof parsed !== "object") {
+      return null;
     }
 
-    return parsed
+    return parsed;
   } catch {
-    return null
+    return null;
   }
 }
 
 function tryParseUrl(content: string) {
-  const trimmed = content.trim()
+  const trimmed = content.trim();
 
   if (!trimmed) {
-    return null
+    return null;
   }
 
   try {
-    const parsed = new URL(trimmed)
+    const parsed = new URL(trimmed);
 
-    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-      return trimmed
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return trimmed;
     }
   } catch {
     // 忽略，继续尝试解析 JSON。
   }
 
   try {
-    const parsed = JSON.parse(trimmed) as { url?: unknown }
+    const parsed = JSON.parse(trimmed) as { url?: unknown };
 
-    if (typeof parsed.url !== 'string') {
-      return null
+    if (typeof parsed.url !== "string") {
+      return null;
     }
 
-    const normalized = parsed.url.trim()
-    const url = new URL(normalized)
+    const normalized = parsed.url.trim();
+    const url = new URL(normalized);
 
-    if (url.protocol === 'http:' || url.protocol === 'https:') {
-      return normalized
+    if (url.protocol === "http:" || url.protocol === "https:") {
+      return normalized;
     }
   } catch {
-    return null
+    return null;
   }
 
-  return null
+  return null;
 }
 
 function resolveExtension(contentType: string | null) {
   if (!contentType) {
-    return '.mp3'
+    return ".mp3";
   }
 
-  if (contentType.includes('audio/mpeg')) return '.mp3'
-  if (contentType.includes('audio/mp4')) return '.m4a'
-  if (contentType.includes('audio/wav')) return '.wav'
-  if (contentType.includes('audio/flac')) return '.flac'
+  if (contentType.includes("audio/mpeg")) return ".mp3";
+  if (contentType.includes("audio/mp4")) return ".m4a";
+  if (contentType.includes("audio/wav")) return ".wav";
+  if (contentType.includes("audio/flac")) return ".flac";
 
-  return '.mp3'
+  return ".mp3";
 }
 
-async function fetchArrayBuffer(ctx: Context, targetUrl: string, timeoutMs: number) {
-  const controller = new AbortController()
-  const disposeTimeout = createTimeout(ctx, controller, timeoutMs)
+async function fetchArrayBuffer(
+  ctx: Context,
+  targetUrl: string,
+  timeoutMs: number
+) {
+  const controller = new AbortController();
+  const disposeTimeout = createTimeout(ctx, controller, timeoutMs);
 
   try {
     const response = await fetch(targetUrl, {
-      method: 'GET',
+      method: "GET",
       signal: controller.signal,
-    })
+    });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
+      throw new Error(`HTTP ${response.status}`);
     }
 
     return {
       buffer: Buffer.from(await response.arrayBuffer()),
-      contentType: response.headers.get('content-type'),
-    }
+      contentType: response.headers.get("content-type"),
+    };
   } finally {
-    disposeTimeout()
-    controller.abort()
+    disposeTimeout();
+    controller.abort();
   }
 }
 
@@ -283,59 +317,111 @@ export async function searchNetEase(
   keyword: string,
   limit: number,
   offset: number,
-  logger: PluginLogger,
+  logger: PluginLogger
 ) {
-  const searchApiUrl = `http://music.163.com/api/search/get/web?csrf_token=hlpretag=&hlposttag=&s=${encodeURIComponent(keyword)}&type=1&offset=${offset}&total=true&limit=${limit}`
+  const searchApiUrl = `http://music.163.com/api/search/get/web?csrf_token=hlpretag=&hlposttag=&s=${encodeURIComponent(
+    keyword
+  )}&type=1&offset=${offset}&total=true&limit=${limit}`;
   const response = await raceRequests(
     ctx,
-    buildSearchCandidates([searchApiUrl], config.searchRequestMode, SEARCH_TIMEOUT_MS),
+    buildSearchCandidates(
+      [searchApiUrl],
+      config.searchRequestMode,
+      SEARCH_TIMEOUT_MS
+    ),
     SEARCH_TIMEOUT_MS,
     parseSearchResponse,
-    '网易云搜索',
-    logger,
-  )
+    "网易云搜索",
+    logger
+  );
 
-  const songs = response.result?.songs ?? []
+  const songs = response.result?.songs ?? [];
 
   return songs.map<SongData>((song) => ({
     id: song.id,
     name: song.name,
-    artists: song.artists.map((artist) => artist.name).join('/'),
+    artists: song.artists.map((artist) => artist.name).join("/"),
     albumName: song.album.name,
     duration: song.duration,
-  }))
+  }));
 }
 
 export async function resolveSongSource(
   ctx: Context,
   config: RuntimeConfig,
   songId: number,
-  logger: PluginLogger,
+  logger: PluginLogger
 ) {
-  const targetUrls = config.type === 'apis'
-    ? PRESET_METING_APIS.map((api) => `${api}?server=netease&type=url&id=${songId}`)
-    : [`${config.text}?server=netease&type=url&id=${songId}`]
+  const targetUrls =
+    config.type === "apis"
+      ? PRESET_METING_APIS.map(
+          (api) => `${api}?server=netease&type=url&id=${songId}`
+        )
+      : [`${config.text}?server=netease&type=url&id=${songId}`];
 
   return await raceRequests(
     ctx,
     buildDirectCandidates(targetUrls),
     SOURCE_TIMEOUT_MS,
     tryParseUrl,
-    '歌曲直链获取',
-    logger,
-  )
+    "歌曲直链获取",
+    logger
+  );
+}
+
+export async function resolvePodcastSource(
+  ctx: Context,
+  config: RuntimeConfig,
+  podcastUrl: string,
+  logger: PluginLogger
+) {
+  const url = new URL(podcastUrl);
+  const programId = url.searchParams.get("id");
+  if (!programId || !/^\d+$/.test(programId)) {
+    throw new Error("网易云播客链接缺少有效的节目 ID");
+  }
+
+  const controller = new AbortController();
+  const disposeTimeout = createTimeout(ctx, controller, SOURCE_TIMEOUT_MS);
+  try {
+    const response = await fetch(
+      `https://music.163.com/api/dj/program/detail?id=${programId}`,
+      {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+          Referer: "https://music.163.com/",
+        },
+      }
+    );
+    if (!response.ok) throw new Error(`节目详情 HTTP ${response.status}`);
+    const data = (await response.json()) as {
+      program?: { mainSong?: { id?: number }; duration?: number };
+    };
+    const songId = data.program?.mainSong?.id;
+    if (!songId) throw new Error("节目详情中没有找到音频 ID");
+    logger.debug("网易云播客节目已解析", { programId, songId });
+
+    const source = await resolveSongSource(ctx, config, songId, logger);
+    return { source, duration: data.program?.duration ?? 0, songId };
+  } finally {
+    disposeTimeout();
+    controller.abort();
+  }
 }
 
 export async function fetchSongBuffer(ctx: Context, targetUrl: string) {
-  const result = await fetchArrayBuffer(ctx, targetUrl, DOWNLOAD_TIMEOUT_MS)
-  return result.buffer
+  const result = await fetchArrayBuffer(ctx, targetUrl, DOWNLOAD_TIMEOUT_MS);
+  return result.buffer;
 }
 
 export async function downloadSongFile(ctx: Context, targetUrl: string) {
-  const result = await fetchArrayBuffer(ctx, targetUrl, DOWNLOAD_TIMEOUT_MS)
-  const filename = `${crypto.randomBytes(8).toString('hex')}${resolveExtension(result.contentType)}`
-  const filePath = path.join(os.tmpdir(), filename)
+  const result = await fetchArrayBuffer(ctx, targetUrl, DOWNLOAD_TIMEOUT_MS);
+  const filename = `${crypto.randomBytes(8).toString("hex")}${resolveExtension(
+    result.contentType
+  )}`;
+  const filePath = path.join(os.tmpdir(), filename);
 
-  await fs.writeFile(filePath, result.buffer)
-  return filePath
+  await fs.writeFile(filePath, result.buffer);
+  return filePath;
 }

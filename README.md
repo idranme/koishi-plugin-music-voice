@@ -2,11 +2,13 @@
 
 [![npm](https://img.shields.io/npm/v/koishi-plugin-music-voice?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-music-voice)
 
-🎵 **语音点歌** - 搜索网易云音乐的歌曲，交互后发送语音消息，🤩付费的歌曲也可以欸？！
+🎵 **语音点歌** - 搜索网易云音乐的歌曲，交互后发送语音消息，🤩 付费的歌曲也可以欸？！
 
 ## 特点
 
 - **搜索歌曲**：🤩 支持网易云音乐的歌曲搜索。
+- **播客直链**：🔗 识别 `music.163.com/dj?id=...` 网易云播客链接，直接解析节目并发送语音，不进入普通歌曲搜索列表。
+- **多种发送方式**：🎙️ 支持音频、文件等发送模式，具体取决于 Koishi 配置。
 - **友好交互**：📱 简单易用的指令，快速获取你喜欢的音乐。
 
 ## 安装
@@ -44,15 +46,16 @@ music <歌曲名称>
 【一条时间较长的语音消息】
 ```
 
-## API说明
+## API 说明
 
 本插件使用基于 Meting 构建的 Meting-API 来获取音乐直链。
 
-如果需要更换API，可以直接在浏览器搜索 "Meting-API"，
+如果需要更换 API，可以直接在浏览器搜索 "Meting-API"，
 
-找到你可用的服务 将自定义API地址填入配置项即可。
+找到你可用的服务 将自定义 API 地址填入配置项即可。
 
 相关地址：
+
 - https://github.com/metowolf/Meting
 - https://github.com/injahow/meting-api
 - https://api.injahow.cn/meting/
