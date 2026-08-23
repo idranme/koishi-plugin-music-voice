@@ -6,7 +6,7 @@ import path from 'node:path'
 import type { Context } from 'koishi'
 
 import { PRESET_METING_APIS } from './config'
-import type { NetEaseSearchResponse, PluginLogger, RuntimeConfig, SearchRequestMode, SongData } from './types'
+import type { NetEasePodcastResponse, NetEaseSearchResponse, PluginLogger, RuntimeConfig, SearchRequestMode, SongData } from './types'
 
 const SEARCH_TIMEOUT_MS = 5000
 const SOURCE_TIMEOUT_MS = 5000
@@ -312,9 +312,10 @@ export async function resolveSongSource(
   songId: number,
   logger: PluginLogger,
 ) {
+  // Meting 需要显式指定网易云源。
   const targetUrls = config.type === 'apis'
-    ? PRESET_METING_APIS.map((api) => `${api}?type=url&id=${songId}`)
-    : [`${config.text}?type=url&id=${songId}`]
+    ? PRESET_METING_APIS.map((api) => `${api}?server=netease&type=url&id=${songId}`)
+    : [`${config.text}?server=netease&type=url&id=${songId}`]
 
   return await raceRequests(
     ctx,
@@ -324,6 +325,61 @@ export async function resolveSongSource(
     '歌曲直链获取',
     logger,
   )
+}
+
+export async function resolvePodcastSource(
+  ctx: Context,
+  config: RuntimeConfig,
+  podcastUrl: string,
+  logger: PluginLogger,
+) {
+  const url = new URL(podcastUrl)
+  const programId = url.searchParams.get('id')
+
+  if (!programId || !/^\d+$/.test(programId)) {
+    throw new Error('网易云播客链接缺少有效的节目 ID')
+  }
+
+  const controller = new AbortController()
+  const disposeTimeout = createTimeout(ctx, controller, SOURCE_TIMEOUT_MS)
+
+  try {
+    // 通过节目详情接口拿到对应音频 ID。
+    const response = await fetch(
+      `https://music.163.com/api/dj/program/detail?id=${programId}`,
+      {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0',
+          Referer: 'https://music.163.com/',
+        },
+      },
+    )
+
+    if (!response.ok) {
+      throw new Error(`节目详情 HTTP ${response.status}`)
+    }
+
+    const data = await response.json() as NetEasePodcastResponse
+    const songId = data.program?.mainSong?.id
+
+    if (!songId) {
+      throw new Error('节目详情中没有找到音频 ID')
+    }
+
+    logger.debug('网易云播客节目已解析', { programId, songId })
+
+    const source = await resolveSongSource(ctx, config, songId, logger)
+
+    return {
+      source,
+      duration: data.program?.mainSong?.duration ?? data.program?.duration ?? 0,
+      songId,
+    }
+  } finally {
+    disposeTimeout()
+    controller.abort()
+  }
 }
 
 export async function fetchSongBuffer(ctx: Context, targetUrl: string) {

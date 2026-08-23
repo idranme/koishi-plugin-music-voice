@@ -69,6 +69,13 @@ export interface NetEaseSongItem {
   duration: number
 }
 
+export interface NetEasePodcastResponse {
+  program?: {
+    mainSong?: { id?: number; duration?: number }
+    duration?: number
+  }
+}
+
 export interface PluginLogger {
   debug: (...args: unknown[]) => void
   warn: (message: string, error?: unknown) => void

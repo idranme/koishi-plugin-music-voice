@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { Context, h, isNullable, type Session } from 'koishi'
 
 import type { MessageBehavior } from './message-behavior'
-import { downloadSongFile, fetchSongBuffer, resolveSongSource, searchNetEase } from './network'
+import { downloadSongFile, fetchSongBuffer, resolvePodcastSource, resolveSongSource, searchNetEase } from './network'
 import { buildQQMarkdownSongList, sendQQMarkdownSongList, supportsQQMarkdown } from './qq-markdown'
 import { formatSongList, generateSongListImage } from './render'
 import type { PluginLogger, RateLimitScope, RuntimeConfig, SilentMessage, SongData } from './types'
@@ -179,6 +179,7 @@ export function registerMusicVoiceCommand(ctx: Context, config: RuntimeConfig, d
       let quoteId = session.messageId ?? null
       let songListMessageId: string | null = null
       let selected: SongData | undefined
+      let podcastSource: string | null = null
 
       const cleanupSongList = async () => {
         if (deps.messageBehavior.shouldRecall('songList')) {
@@ -187,12 +188,32 @@ export function registerMusicVoiceCommand(ctx: Context, config: RuntimeConfig, d
         }
       }
 
+      // 识别网易云播客链接并跳过普通搜索流程。
+      const podcastMatch = keyword.match(/^https?:\/\/(?:music\.)?163\.com\/dj\?[^\s]*\bid=\d+/i)
+
+      if (podcastMatch) {
+        try {
+          const podcast = await resolvePodcastSource(ctx, config, podcastMatch[0], deps.logger)
+          podcastSource = podcast.source
+          selected = {
+            id: podcast.songId,
+            name: '网易云播客',
+            artists: '',
+            albumName: '',
+            duration: podcast.duration,
+          }
+        } catch (error) {
+          deps.logger.warn('解析网易云播客失败', error)
+          return session.text('.getSongFailed')
+        }
+      }
+
       let neteaseData: SongData[] = []
       const requestedPage = Number.isInteger(options.page) && options.page > 0
         ? options.page - 1
         : 0
 
-      if (options.number !== undefined) {
+      if (options.number !== undefined && !podcastSource) {
         const serialNumber = options.number
 
         if (!Number.isInteger(serialNumber) || serialNumber < 1) {
@@ -230,7 +251,7 @@ export function registerMusicVoiceCommand(ctx: Context, config: RuntimeConfig, d
         }
 
         selected = neteaseData[serialNumber - pageStart]
-      } else {
+      } else if (!podcastSource) {
         let currentPage = requestedPage
         const pageSize = config.searchListCount
 
@@ -354,7 +375,7 @@ export function registerMusicVoiceCommand(ctx: Context, config: RuntimeConfig, d
       }
 
       try {
-        const src = await resolveSongSource(ctx, config, selected.id, deps.logger)
+        const src = podcastSource ?? (await resolveSongSource(ctx, config, selected.id, deps.logger))
 
         deps.logger.debug('选中歌曲', selected)
         deps.logger.debug('歌曲直链', src)
