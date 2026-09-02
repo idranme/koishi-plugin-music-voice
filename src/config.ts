@@ -1,14 +1,20 @@
 import { Schema } from 'koishi'
 
-export const PRESET_METING_APIS = [
-  'https://api.injahow.cn/meting/',
+// 已用 VIP 歌曲验证过能返回完整音源的 API。
+export const PRESET_FULL_METING_APIS = [
+  'https://music.duanjinglin.com/api',
   'https://api.qijieya.cn/meting/',
-  'https://api.moeyao.cn/meting/',
-  'https://meting.jinghuashang.cn/',
-  'https://meting.qjqq.cn/',
-  'https://api.crowya.com/meting/',
-  'https://meting-api.mlj-dragon.cn/meting/',
-  'https://api.amarea.cn/meting/',
+]
+
+// 目前只能返回 30 秒试听版本的 API，仅在“允许试听”开关开启后使用。
+export const PRESET_TRIAL_METING_APIS = [
+  'https://met.liiiu.cn/meting/api',
+  'https://api-meting.ontus.cn/api',
+  'https://service.onlyzyx.com/meting-api/',
+  'https://meting-api.malinkang.com/api',
+  'https://meting.api.cloudchewie.com/api',
+  'https://met.api.xiaoguan.fit/api',
+  'https://metingapi.fluolab.cn/api',
 ]
 
 export const Config = Schema.intersect([
@@ -85,6 +91,9 @@ export const Config = Schema.intersect([
       Schema.const('apis').description('预设 API'),
       Schema.const('custom').description('自定义 API'),
     ]).description('获取音乐直链的后端').default('apis'),
+    allowTrialOnly: Schema.boolean()
+      .description('开启后仅使用只返回 30 秒试听版本的 API')
+      .default(false),
     searchRequestMode: Schema.union([
       Schema.const('parallel').description('并行请求'),
       Schema.const('direct').description('直连'),
@@ -98,7 +107,7 @@ export const Config = Schema.intersect([
     Schema.object({
       type: Schema.const('custom').required(),
       text: Schema.string()
-        .default('https://api.injahow.cn/meting/')
+        .default('https://api.qijieya.cn/meting/')
         .description('自定义后端 API 地址')
         .role('link'),
     }),

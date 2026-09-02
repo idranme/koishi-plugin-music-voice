@@ -5,7 +5,7 @@ import path from 'node:path'
 
 import type { Context } from 'koishi'
 
-import { PRESET_METING_APIS } from './config'
+import { PRESET_FULL_METING_APIS, PRESET_TRIAL_METING_APIS } from './config'
 import type { NetEasePodcastResponse, NetEaseSearchResponse, PluginLogger, RuntimeConfig, SearchRequestMode, SongData } from './types'
 
 const SEARCH_TIMEOUT_MS = 5000
@@ -313,8 +313,11 @@ export async function resolveSongSource(
   logger: PluginLogger,
 ) {
   // Meting 需要显式指定网易云源。
+  const presetApis = config.allowTrialOnly
+    ? PRESET_TRIAL_METING_APIS
+    : PRESET_FULL_METING_APIS
   const targetUrls = config.type === 'apis'
-    ? PRESET_METING_APIS.map((api) => `${api}?server=netease&type=url&id=${songId}`)
+    ? presetApis.map((api) => `${api}?server=netease&type=url&id=${songId}`)
     : [`${config.text}?server=netease&type=url&id=${songId}`]
 
   return await raceRequests(

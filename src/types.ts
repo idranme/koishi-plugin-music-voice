@@ -39,6 +39,7 @@ export interface MusicVoiceConfig {
   rateLimitInterval?: number
   type: RequestMode
   text?: string
+  allowTrialOnly: boolean
   searchRequestMode: SearchRequestMode
   srcToWhat: SendType
   loggerinfo: boolean
