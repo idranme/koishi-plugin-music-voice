@@ -4,6 +4,7 @@ import { Schema } from 'koishi'
 export const PRESET_FULL_METING_APIS = [
   'https://music.duanjinglin.com/api',
   'https://api.qijieya.cn/meting/',
+  'https://meting.naihee.com/api',
 ]
 
 // 目前只能返回 30 秒试听版本的 API，仅在“允许试听”开关开启后使用。
@@ -11,8 +12,10 @@ export const PRESET_TRIAL_METING_APIS = [
   'https://met.liiiu.cn/meting/api',
   'https://api-meting.ontus.cn/api',
   'https://service.onlyzyx.com/meting-api/',
+  'https://api.honmaple.com/meting',
   'https://meting-api.malinkang.com/api',
   'https://meting.api.cloudchewie.com/api',
+  'https://api.moeyao.cn/meting/',
   'https://met.api.xiaoguan.fit/api',
   'https://metingapi.fluolab.cn/api',
 ]
