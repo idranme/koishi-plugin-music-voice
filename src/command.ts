@@ -1,12 +1,10 @@
-import { promises as fs } from 'node:fs'
-import { pathToFileURL } from 'node:url'
-
 import { Context, h, isNullable, type Session } from 'koishi'
 
 import type { MessageBehavior } from './message-behavior'
-import { downloadSongFile, fetchSongBuffer, resolvePodcastSource, resolveSongSource, searchNetEase } from './network'
+import { resolvePodcastSource, resolveSongSource, searchNetEase } from './network'
 import { buildQQMarkdownSongList, sendQQMarkdownSongList, supportsQQMarkdown } from './qq-markdown'
 import { formatSongList, generateSongListImage } from './render'
+import { sendSong } from './song-delivery'
 import type { PluginLogger, RateLimitScope, RuntimeConfig, SilentMessage, SongData } from './types'
 
 interface CommandDependencies {
@@ -111,35 +109,6 @@ async function sendSongList(
   return { failed: false, messageId: getLastMessageId(messageIds), isMarkdown: false }
 }
 
-async function sendSongByMode(ctx: Context, session: Session, src: string, config: RuntimeConfig) {
-  switch (config.srcToWhat) {
-    case 'text':
-      await session.send(h.text(src))
-      return
-    case 'audio':
-      await session.send(h.audio(src))
-      return
-    case 'audiobuffer': {
-      const srcBuffer = await fetchSongBuffer(ctx, src)
-      await session.send(h.audio(srcBuffer, 'audio/mpeg'))
-      return
-    }
-    case 'video':
-      await session.send(h.video(src))
-      return
-    case 'file': {
-      const tempFilePath = await downloadSongFile(ctx, src)
-
-      try {
-        await session.send(h.file(pathToFileURL(tempFilePath).href))
-      } finally {
-        await fs.unlink(tempFilePath).catch(() => {})
-      }
-      return
-    }
-  }
-}
-
 export function registerMusicVoiceCommand(ctx: Context, config: RuntimeConfig, deps: CommandDependencies) {
   const rateLimitMap = new Map<string, number>()
 
@@ -147,6 +116,7 @@ export function registerMusicVoiceCommand(ctx: Context, config: RuntimeConfig, d
     .option('number', '-n <number:number> 歌曲序号')
     .option('page', '-p <page:number> 页码')
     .option('encodedKeyword', '-k <keyword:string> 编码关键词')
+    .option('file', '-F 发送为文件')
     .action(async ({ session, options }, keyword) => {
       if (typeof options.encodedKeyword === 'string') {
         keyword = Buffer.from(options.encodedKeyword, 'base64url').toString('utf8')
@@ -379,9 +349,9 @@ export function registerMusicVoiceCommand(ctx: Context, config: RuntimeConfig, d
 
         deps.logger.debug('选中歌曲', selected)
         deps.logger.debug('歌曲直链', src)
-        deps.logger.debug('发送类型', config.srcToWhat)
+        deps.logger.debug('发送类型', options.file ? 'file' : config.srcToWhat)
 
-        await sendSongByMode(ctx, session, src, config)
+        await sendSong(ctx, session, src, config, { forceFile: options.file })
         await cleanupFinishedMessages()
       } catch (error) {
         await cleanupFinishedMessages()

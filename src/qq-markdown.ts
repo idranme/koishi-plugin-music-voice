@@ -135,15 +135,16 @@ export function buildQQMarkdownSongList(
   const rows = songs.map((song, index) => {
     const serialNumber = startIndex + index + 1
     const playLink = buildInlineCommand(commandName, ['-n', String(serialNumber), '-k', encodedKeyword], true)
+    const downloadLink = buildInlineCommand(commandName, ['-n', String(serialNumber), '-F', '-k', encodedKeyword], true)
 
-    return `|[播放](${playLink})|${escapeMarkdownCell(song.name)}|${escapeMarkdownCell(song.artists)}|`
+    return `|[播放](${playLink})|[下载](${downloadLink})|${escapeMarkdownCell(song.name)}|${escapeMarkdownCell(song.artists)}|`
   })
 
   const lines = [
     '# 歌单',
     '',
-    '|点歌|歌曲名称|歌手|',
-    '|---|---|---|',
+    '|播放|下载|歌曲名称|歌手|',
+    '|---|---|---|---|',
     ...rows,
     '',
     `|[上一页](${prevPageLink})|[下一页](${nextPageLink})|`,
