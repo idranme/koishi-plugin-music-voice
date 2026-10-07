@@ -19,6 +19,15 @@ interface RequestCandidate {
   run: (signal: AbortSignal) => Promise<string>
 }
 
+// 候选请求返回“格式正确但内容为空”（例如空歌曲列表）时标记的错误。
+// 空结果不应当作成功，需要继续等待其他候选（如代理）返回。
+class EmptyResultError extends Error {
+  constructor(description: string) {
+    super(`${description} 返回空结果`)
+    this.name = 'EmptyResultError'
+  }
+}
+
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message
@@ -141,6 +150,8 @@ async function raceRequests<T>(
   parser: (content: string) => T | null,
   description: string,
   logger: PluginLogger,
+  /** 判定结果是否为空（空结果按失败处理，会继续等待其他候选）。 */
+  isEmpty?: (value: T) => boolean,
 ) {
   if (!candidates.length) {
     throw new Error(`${description} 没有可用请求。`)
@@ -160,9 +171,20 @@ async function raceRequests<T>(
         throw new Error('返回结果不可用')
       }
 
+      // 空结果视为失败，让 Promise.any 继续等待其他候选返回。
+      if (isEmpty?.(parsed)) {
+        throw new EmptyResultError(candidate.label)
+      }
+
       logger.debug(`${description} 命中`, candidate.label)
       return parsed
     } catch (error) {
+      // 空结果需要保留原始错误类型，便于汇总时区分“搜不到”与“请求失败”。
+      if (error instanceof EmptyResultError) {
+        logger.debug(`${description} 返回空结果`, candidate.label)
+        throw error
+      }
+
       if (controller.signal.aborted && controller.signal.reason === REQUEST_TIMEOUT_REASON) {
         throw new Error(`${candidate.label} 请求超时`)
       }
@@ -180,6 +202,13 @@ async function raceRequests<T>(
   try {
     return await Promise.any(tasks)
   } catch (error) {
+    // 全部候选失败：若每个候选都只是返回空结果，则视为没有搜索到可用内容。
+    if (error instanceof AggregateError && error.errors.length > 0
+      && error.errors.every((item: unknown) => item instanceof EmptyResultError)) {
+      logger.debug(`${description} 全部返回空结果`, error.errors.length)
+      throw new EmptyResultError(description)
+    }
+
     logger.error(`${description} 全部失败`, error)
     throw error
   } finally {
@@ -286,14 +315,27 @@ export async function searchNetEase(
   logger: PluginLogger,
 ) {
   const searchApiUrl = `http://music.163.com/api/search/get/web?csrf_token=hlpretag=&hlposttag=&s=${encodeURIComponent(keyword)}&type=1&offset=${offset}&total=true&limit=${limit}`
-  const response = await raceRequests(
-    ctx,
-    buildSearchCandidates([searchApiUrl], config.searchRequestMode, SEARCH_TIMEOUT_MS),
-    SEARCH_TIMEOUT_MS,
-    parseSearchResponse,
-    '网易云搜索',
-    logger,
-  )
+  let response: NetEaseSearchResponse
+
+  try {
+    response = await raceRequests(
+      ctx,
+      buildSearchCandidates([searchApiUrl], config.searchRequestMode, SEARCH_TIMEOUT_MS),
+      SEARCH_TIMEOUT_MS,
+      parseSearchResponse,
+      '网易云搜索',
+      logger,
+      // 空歌曲列表视为无效结果，交由其他候选（直连/代理）继续尝试。
+      (parsed) => !parsed.result?.songs?.length,
+    )
+  } catch (error) {
+    // 所有候选都只返回空列表时，按“未搜索到歌曲”返回空数组，由上层提示更换关键词。
+    if (error instanceof EmptyResultError) {
+      return []
+    }
+
+    throw error
+  }
 
   const songs = response.result?.songs ?? []
 
