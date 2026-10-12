@@ -432,11 +432,19 @@ export async function fetchSongBuffer(ctx: Context, targetUrl: string) {
   return result.buffer
 }
 
+export interface SongFileDownload {
+  filePath: string
+  /** 按响应 MIME 推断出的扩展名，例如 .mp3。 */
+  extension: string
+}
+
 export async function downloadSongFile(ctx: Context, targetUrl: string) {
   const result = await fetchArrayBuffer(ctx, targetUrl, DOWNLOAD_TIMEOUT_MS)
-  const filename = `${crypto.randomBytes(8).toString('hex')}${resolveExtension(result.contentType)}`
+  const extension = resolveExtension(result.contentType)
+  // 临时文件保持随机名，避免并发下载时互相覆盖。
+  const filename = `${crypto.randomBytes(8).toString('hex')}${extension}`
   const filePath = path.join(os.tmpdir(), filename)
 
   await fs.writeFile(filePath, result.buffer)
-  return filePath
+  return { filePath, extension } satisfies SongFileDownload
 }

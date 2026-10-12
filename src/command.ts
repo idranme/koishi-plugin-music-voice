@@ -351,7 +351,11 @@ export function registerMusicVoiceCommand(ctx: Context, config: RuntimeConfig, d
         deps.logger.debug('歌曲直链', src)
         deps.logger.debug('发送类型', options.file ? 'file' : config.srcToWhat)
 
-        await sendSong(ctx, session, src, config, { forceFile: options.file })
+        // 文件发送时以“歌名 - 歌手”作为文件名，实际后缀名由响应 MIME 决定。
+        await sendSong(ctx, session, src, config, {
+          forceFile: options.file,
+          fileName: selected.artists ? `${selected.name} - ${selected.artists}` : selected.name,
+        })
         await cleanupFinishedMessages()
       } catch (error) {
         await cleanupFinishedMessages()
